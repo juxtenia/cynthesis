@@ -412,6 +412,7 @@ let print (f : file) : unit =
 let feature = 
   { fd_name = "debugprint";
     fd_enabled = false;
+    fd_extraopt = [];
     fd_description = "Dumps a description of the AST to stdout";
     fd_doit = print;
     fd_post_check = false;
