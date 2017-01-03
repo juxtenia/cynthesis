@@ -9,6 +9,7 @@
 /*.s
 /*.asm
 /*.out
+/examples/*.out
 /allheaders
 /allcfiles
 /allmlfiles
