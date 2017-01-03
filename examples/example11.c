@@ -1,0 +1,16 @@
+#include <stdio.h>
+
+int bitcount(int input);
+
+inline int bitcount (int input){
+	int output = 0;
+	for(int i = 0;i<8*sizeof(input);i++){
+		if(input & (1 << i)) output++;
+	}
+	return output;
+}
+
+int main (int argc, int *argv[]){
+	printf("%d\n",bitcount(11));
+	return 0;
+}
