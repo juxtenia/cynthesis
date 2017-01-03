@@ -92,7 +92,7 @@ and params_structure (p: (string * typ * attributes) list) (s:string):string =
 	match p with
 	| [] -> s
 	| [(st,t,a)] -> s ^ "(\"" ^ st ^ "\", " ^ (typ_structure t) ^ ", [" ^ (attributes_structure a "") ^ "])"
-	| (st,t,a) :: tl -> params_structure tl (s ^ "(\"" ^ st ^ "\", " ^ (typ_structure t) ^ ", [" ^ (attributes_structure a "") ^ "]),")
+	| (st,t,a) :: tl -> params_structure tl (s ^ "(\"" ^ st ^ "\", " ^ (typ_structure t) ^ ", [" ^ (attributes_structure a "") ^ "]), ")
 and params_option_structure (p: (string * typ * attributes) list option) :string =
 	match p with
 	| Some pr -> (params_structure pr "[") ^ "]"
@@ -181,18 +181,18 @@ and eitems_structure (e:(string * exp * location) list) (s:string) :string =
 	match e with
 	| [] -> s
 	| [(s,ex,l)] -> s ^ "(\"" ^ s 
-		^ "\"," ^ (exp_structure ex) 
-		^ "," ^ (location_structure l) ^ ")"
+		^ "\", " ^ (exp_structure ex) 
+		^ ", " ^ (location_structure l) ^ ")"
 	| (s,ex,l) :: tl -> eitems_structure tl (s ^ "(\"" ^ s 
-		^ "\"," ^ (exp_structure ex) 
-		^ "," ^ (location_structure l) ^ "),")
+		^ "\", " ^ (exp_structure ex) 
+		^ ", " ^ (location_structure l) ^ "), ")
 and typeinfo_structure (t:typeinfo) :string =
 	"typeinfo:{tname:\"" ^ t.tname 
 	^ "\", ttype:" ^ (typ_structure t.ttype) 
 	^ ", treferenced:" ^ (string_of_bool t.treferenced) ^ "}"
 and varinfo_structure (v:varinfo) :string =
 	"varinfo:{vname:\"" ^ v.vname
-	^ ", vtype:" ^ (typ_structure v.vtype) 
+	^ "\", vtype:" ^ (typ_structure v.vtype) 
 	^ ", vattr:[" ^ (attributes_structure v.vattr "")
 	^ "], vstorage:" ^ (storage_structure v.vstorage) 
 	^ ", vglob:" ^ (string_of_bool v.vglob) 
@@ -240,7 +240,7 @@ and constant_structure (c:constant) :string =
 		| Some s -> "\"" ^ s ^ "\""
 		| None -> "None") ^ ")"
 	| CStr s -> "CStr:\"" ^ s ^ "\""
-	| CWStr (il) -> "[" ^ (String.concat "," (List.map Int64.to_string il)) ^ "]"
+	| CWStr (il) -> "[" ^ (String.concat ", " (List.map Int64.to_string il)) ^ "]"
 	| CChr c -> string_of_char c
 	| CReal (f,k,so) -> "CReal:(" ^ (string_of_float f)
 		^ ", " ^ (fkind_structure k)
@@ -251,7 +251,7 @@ and constant_structure (c:constant) :string =
 		^ ", \"" ^ s 
 		^ "\", " ^ (enuminfo_structure ei) ^ ")"
 and lval_structure ((l,o):lval) :string =
-	"lval:(" ^ (lhost_structure l) ^ "," ^ (offset_structure o) ^ ")"
+	"lval:(" ^ (lhost_structure l) ^ ", " ^ (offset_structure o) ^ ")"
 and lhost_structure (l:lhost) :string =
 	match l with
 	| Var v -> "Var:" ^ (varinfo_structure v)
@@ -260,15 +260,15 @@ and offset_structure (o:offset) :string =
 	match o with
 	| NoOffset -> "NoOffset"
 	| Field (fi,o) -> "Field:(" ^ (fieldinfo_structure fi) 
-		^ "," ^ (offset_structure o) ^ ")"
+		^ ", " ^ (offset_structure o) ^ ")"
 	| Index (e,o) -> "Index:(" ^ (exp_structure e) 
-		^ "," ^ (offset_structure o) ^ ")"
+		^ ", " ^ (offset_structure o) ^ ")"
 and init_structure (i:init) :string =
 	match i with
 	| SingleInit e -> "SingleInit:" ^ (exp_structure e)
 	| CompoundInit (t, l) -> "CompoundInit:(" ^ (typ_structure t) 
-		^ ",[" ^ (String.concat "," (List.map 
-			(fun (o,i) -> "(" ^ (offset_structure o) ^ "," ^ (init_structure i) ^ ")") l
+		^ ",[" ^ (String.concat ", " (List.map 
+			(fun (o,i) -> "(" ^ (offset_structure o) ^ ", " ^ (init_structure i) ^ ")") l
 		)) ^ "])"
 and initinfo_structure (i:initinfo) :string =
 	match i.init with
@@ -276,35 +276,35 @@ and initinfo_structure (i:initinfo) :string =
 	| Some s -> "initinfo:{" ^ (init_structure s) ^ "}"
 and fundec_structure (f:fundec) :string =
 	"fundec:{svar:" ^ (varinfo_structure f.svar)
-	^ ", sformals:[" ^ (String.concat "," (List.map varinfo_structure f.sformals))
-	^ "], slocals:[" ^ (String.concat "," (List.map varinfo_structure f.slocals))
+	^ ", sformals:[" ^ (String.concat ", " (List.map varinfo_structure f.sformals))
+	^ "], slocals:[" ^ (String.concat ", " (List.map varinfo_structure f.slocals))
 	^ "], smaxid:" ^ (string_of_int f.smaxid)
 	^ ", sbody:" ^ (block_structure f.sbody)
 	^ ", smaxstmtid" ^ (match f.smaxstmtid with
 		| Some i -> string_of_int i
 		| None -> "None")
-	^ ", sallstmts:[" ^ (String.concat "," (List.map stmt_structure f.sallstmts)) ^ "]}"
+	^ ", sallstmts:[" ^ (String.concat ", " (List.map stmt_structure f.sallstmts)) ^ "]}"
 and block_structure (b:block) :string =
 	"block:{battrs:" ^ (attributes_structure b.battrs "")
-	^ ", bstmts:[" ^ (String.concat "," (List.map stmt_structure b.bstmts)) ^ "]}"
+	^ ", bstmts:[" ^ (String.concat ", " (List.map stmt_structure b.bstmts)) ^ "]}"
 and stmt_structure (s:stmt) :string =
-	"stmt:{labels:[" ^ (String.concat "," (List.map label_structure s.labels))
+	"stmt:{labels:[" ^ (String.concat ", " (List.map label_structure s.labels))
 	^ "], skind:" ^ (stmtkind_structure s.skind)
 	^ ", sid:" ^ (string_of_int s.sid) ^ "}"
 and label_structure (l:label) :string =
 	match l with
 	| Label (s,l,b) -> "Label:(\"" ^ s 
-		^ "\"," ^ (location_structure l) 
-		^ "," ^ (string_of_bool b) ^ ")"
+		^ "\", " ^ (location_structure l) 
+		^ ", " ^ (string_of_bool b) ^ ")"
 	| Case (e,l) -> "Case:(" ^ (exp_structure e) 
-		^ "," ^ (location_structure l) ^ ")"
+		^ ", " ^ (location_structure l) ^ ")"
 	| CaseRange (e1,e2,l) -> "CaseRange:(" ^ (exp_structure e1) 
-		^ "," ^ (exp_structure e2) 
-		^ "," ^ (location_structure l) ^ ")"
+		^ ", " ^ (exp_structure e2) 
+		^ ", " ^ (location_structure l) ^ ")"
 	| Default l -> "Default:(" ^ (location_structure l) ^ ")"
 and stmtkind_structure (s:stmtkind) :string =
 	match s with
-	| Instr (l) -> "Instr:[" ^ (String.concat "," (List.map instr_structure l)) ^ "]"
+	| Instr (l) -> "Instr:[" ^ (String.concat ", " (List.map instr_structure l)) ^ "]"
 	| Return (e,l) -> "Return:(" ^ (exp_option_structure e) 
 		^ ", " ^ (location_structure l) ^ ")"
 	| Goto (s,l) -> "Goto:(" ^ (stmt_structure !s)
@@ -333,7 +333,7 @@ and instr_structure (i:instr) :string =
 			| Some lv -> lval_structure lv
 			| None -> "None") 
 		^ ", " ^ (exp_structure e)
-		^ ", [" ^ (String.concat "," (List.map exp_structure el))
+		^ ", [" ^ (String.concat ", " (List.map exp_structure el))
 		^ ", " ^ (location_structure l) ^ ")"
 	| Asm (_,_,_,_,_,l) -> "Asm:" ^ (location_structure l)
 and typesig_structure (ts:typsig) :string =
@@ -350,7 +350,7 @@ and typesig_structure (ts:typsig) :string =
 		^ "\", " ^ (attributes_structure al "") ^ ")"
 	| TSFun (ts,tslo,b,al) -> "TSFun:(" ^ (typesig_structure ts)
 		^ ", [" ^ (match tslo with
-			| Some tsl -> (String.concat "," (List.map typesig_structure tsl))
+			| Some tsl -> (String.concat ", " (List.map typesig_structure tsl))
 				^ "], " ^ (string_of_bool b) 
 			| None -> "None"
 		) ^ ", [" ^ (attributes_structure al "") ^ "])"
