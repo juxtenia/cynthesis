@@ -4,15 +4,12 @@ module V = Vil
 module E = Errormsg
 
 let cynthesize f = 
-	if not (Feature.enabled "makeCFG") then
-    Errormsg.s (Errormsg.error
-                  "--docynthesis: you must also specify --domakeCFG\n");
-    if not (Feature.enabled "simplify") then
-    Errormsg.s (Errormsg.error
-                  "--docynthesis: you must also specify --dosimplify\n");
-    if not (Feature.enabled "partial") then
-    Errormsg.s (Errormsg.error
-                  "--docynthesis: you must also specify --dopartial\n");
+	Simplify.feature.fd_doit f;
+	Partial.makeCFGFeature.fd_doit f;
+	Partial.makeCFGFeature.fd_enabled <- true; (* Stops the partial feature failing *)
+	Partial.feature.fd_doit f;
+	Printers.cfgfeature.fd_doit f;   (** DEBUG PRINT *)
+	Printers.transfeature.fd_doit f; (** DEBUG PRINT *)
 	if Validitycheck.check f 
 	then List.iter (fun glob -> match glob with
       | GFun(fd,_) when fd.svar.vinline ->  E.log("%s\n") (V.string_of_funmodule (V.funtofunmodule fd));
