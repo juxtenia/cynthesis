@@ -1,5 +1,6 @@
 open Cil
 open Feature
+open Cfg
 module E = Errormsg
 
 
@@ -405,17 +406,71 @@ let file_structure (f:file) :string =
 	^ "}"
 ;;
 
-let print (f : file) : unit =
+let debugprint (f : file) : unit =
   E.log "%s\n" (file_structure f);
   ()
 
-let feature = 
+let transprint (f : file) : unit =
+	lineDirectiveStyle := None ;
+	printCilAsIs := true ;
+	List.iter (fun g -> E.log "%a\n" d_global g)  f.globals
+;;
+
+
+let cfgprint (f : file) : unit =
+	List.iter (fun glob -> match glob with
+      | GFun(fd,_) ->  printCfgChannel !E.logChannel fd
+      | _ -> ()
+  ) f.globals
+;;
+
+let cfglistprint (f : file) : unit =
+  List.iter (fun glob -> match glob with
+      | GFun(fd,_) ->  E.log "Stmts of %s\n" fd.svar.vname ;
+        (List.iter 
+          (fun (s:stmt) -> E.log "%d: %a\n" s.sid d_stmt s) 
+        fd.sallstmts)
+      | _ -> ()
+  ) f.globals
+;;
+
+let transfeature = 
+  { fd_name = "transprint";
+    fd_enabled = false;
+    fd_extraopt = [];
+    fd_description = "Prints the transformed code to stdout";
+    fd_doit = transprint;
+    fd_post_check = false;
+}
+
+let debugfeature = 
   { fd_name = "debugprint";
     fd_enabled = false;
     fd_extraopt = [];
     fd_description = "Dumps a description of the AST to stdout";
-    fd_doit = print;
+    fd_doit = debugprint;
     fd_post_check = false;
 }
 
-let () = Feature.register feature
+let cfgfeature = 
+  { fd_name = "cfgprint";
+    fd_enabled = false;
+    fd_extraopt = [];
+    fd_description = "Printing the cfg";
+    fd_doit = cfgprint;
+    fd_post_check = false;
+}
+
+let cfglistfeature = 
+  { fd_name = "cfglistprint";
+    fd_enabled = false;
+    fd_extraopt = [];
+    fd_description = "Listing the cfg statements";
+    fd_doit = cfglistprint;
+    fd_post_check = false;
+}
+
+let () = Feature.register transfeature
+let () = Feature.register debugfeature
+let () = Feature.register cfgfeature
+let () = Feature.register cfglistfeature
