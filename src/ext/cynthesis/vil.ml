@@ -346,7 +346,7 @@ let generatemodule (v:vvarinfo) (s:stmt) :vmodule =
 
 let replaceone (reps :(voperation*voperation) list) (op: voperation) = 
 	try snd (List.find (fun (f,_) -> f.oid = op.oid) reps)
-		with | Not_found -> op
+	with | Not_found -> op
 
 let replaceoperations (reps :(voperation*voperation) list) (ops :voperation list) = List.map 
 	(fun o -> let op = 
@@ -435,6 +435,58 @@ let generateconnections (m:funmodule) = List.iter
 		then E.s (E.error "%d != 1 entry points to function %s" !count m.vdesc.varname)
 	;;
 
+let variablecull (f:funmodule) = 
+	f.vlocals <- List.filter
+	(fun v -> 
+		let ret = List.exists 
+			(fun m ->
+				List.exists
+				(fun o -> 
+					match o.operation with
+						| Variable v1 when v1.varname = v.varname -> true
+						| _ -> false
+				)
+				m.mdataFlowGraph
+			) f.vmodules
+		in
+			if not ret 
+			then List.iter 
+				(fun m -> 
+					m.mdataFlowGraph <- List.filter (fun o -> 
+						match o.operation with
+							| Result (v1,_) when v1.varname = v.varname -> false
+							| _ -> true
+					) m.mdataFlowGraph
+				) f.vmodules;
+			ret
+	)
+	f.vlocals;
+	List.iter
+	(fun v -> 
+		let ret = List.exists 
+			(fun m ->
+				List.exists
+				(fun o -> 
+					match o.operation with
+						| Variable v1 when v1.varname = v.varname -> true
+						| _ -> false
+				)
+				m.mdataFlowGraph
+			) f.vmodules
+		in
+			if not ret 
+			then List.iter 
+				(fun m -> 
+					m.mdataFlowGraph <- List.filter (fun o -> 
+						match o.operation with
+							| Result (v1,_) when v1.varname = v.varname -> false
+							| _ -> true
+					) m.mdataFlowGraph
+				) f.vmodules
+			else ()
+	)
+	f.vinputs
+
 let funtofunmodule (f:fundec) :funmodule = let _ = dataid := 0; 
 	in let vardesc = generatedesc f.svar
 	in let ret = {
@@ -444,11 +496,15 @@ let funtofunmodule (f:fundec) :funmodule = let _ = dataid := 0;
 		vcontrolconnections = [];
 		vmodules = List.map (generatemodule vardesc) f.sallstmts;
 	} in begin
-		generateconnections ret; 
+		generateconnections ret;  (* Generate connections for compacting to use *)
 		ret.vmodules <- compactmodules [] ret.vmodules;
+		(* Wipe the connections again, as they may now be inconsistent *)
 		List.iter (fun m -> m.minputs <- []) ret.vmodules;
 		ret.vcontrolconnections <- [];
-		generateconnections ret; 
+		(* Regenerate the connections *)
+		generateconnections ret;
+		(* Remove unused variables *)
+		variablecull ret;
 		ret
 	end
 
