@@ -33,8 +33,6 @@ and funmodule = {
 		(** The parameters to the function *)
 	mutable vlocals: vvarinfo list;
 		(** The local variables in the function *)
-	mutable vcontrolconnections: vconnection list;
-		(** The connections to provide control flow *)
 	mutable vmodules: vmodule list;
 		(** The modules that provide internal functionality *)
 }
@@ -74,6 +72,8 @@ and voperation = {
 		(** id used to remove duplicates inside a module *)
 	mutable operation: voperationtype;
 		(** the type of this operation*)
+	mutable ousecount: int;
+		(** the number of users of this operation *)
 }
 and voperationtype = 
 	| Variable of vvarinfo
@@ -120,7 +120,6 @@ and string_of_funmodule f =
 	"{ vdesc:" ^ (string_of_vvarinfo f.vdesc)
 	^ ", vinputs:[" ^ (String.concat ", " (List.map string_of_vvarinfo f.vinputs))
 	^ "], vlocals:[" ^ (String.concat ", " (List.map string_of_vvarinfo f.vlocals))
-	^ "], vcontrolconnections:[" ^ (String.concat ", " (List.map string_of_vconnection f.vcontrolconnections))
 	^ "], vmodules:[" ^ (String.concat ", " (List.map string_of_vmodule f.vmodules))
 	^ "]}"
 and string_of_vvarinfo v = 
@@ -153,6 +152,7 @@ and string_of_vmodule m =
 	^ "]}"
 and string_of_voperation o = 
 	"{ oid:" ^ (string_of_int o.oid)
+	^ ", ousecount:" ^ (string_of_int o.ousecount) 
 	^ ", operation:" ^ (string_of_voperationtype o.operation)
 	^ "}"
 and string_of_voperationtype vt = "{" ^ (match vt with
@@ -170,8 +170,6 @@ and string_of_vtype t =
 	^ "}"
 
 let dataid = ref 0;;
-
-let blanktype :vtype = {width = 0; isSigned = false};;
 
 let rec typesigned (t:typ) :bool = match t with
 	| TInt(ik,_) -> isSigned ik
@@ -235,7 +233,7 @@ let generatevariables (vs:varinfo list) :vvarinfo list =
 	List.map generatevariable vs
 
 let generateoperation (m:vmodule) (ot:voperationtype) = 
-	let ret = {oid = !dataid; operation = ot}
+	let ret = {oid = !dataid; operation = ot; ousecount = 0}
     in dataid:= !dataid + 1;
     	m.mdataFlowGraph <- ret::m.mdataFlowGraph;
     	ret;;
@@ -281,9 +279,7 @@ let rec generateinstrlist (ass:voperation list) (vars:vvarinfo -> voperation) (m
   						) ass
   					then ass
   					else (generateresult m result var) :: ass;
-  				in generateinstrlist as1 
-  					(fun v -> if v.varname = var.varname then result else vars v)
-  					m t
+  				in generateinstrlist as1 (fun v -> if v.varname = var.varname then result else vars v) m t
   			| _ -> E.s (E.error "Illegal lvalue %a.\n" d_lval lv)
   		)
 		| Call (_,_,_,l) -> E.s (E.error "At %a illegal instr %a.\n" d_loc l d_instr h) 
@@ -326,7 +322,7 @@ let generatemodule (v:vvarinfo) (s:stmt) :vmodule =
   			)
   			| If (e,b1,b2,l) -> let result = generateexp ret e
   				in (match s.succs with
-  				| tb::fb::[] -> ret.moutputs <- 
+  				| fb::tb::[] -> ret.moutputs <- 
   					{connectfrom = Some s.sid; connectto = Some tb.sid; requires = Some (result,true)} ::
   					{connectfrom = Some s.sid; connectto = Some fb.sid; requires = Some (result,false)} :: []
   				| _ -> E.s (E.error "At %a stmt %a has incorrect successors\n" d_loc l d_stmt s)
@@ -344,18 +340,66 @@ let generatemodule (v:vvarinfo) (s:stmt) :vmodule =
   		ret
 	end
 
+let eq_type (t1:vtype) (t2:vtype) = 
+	t1.width = t2.width && t1.isSigned = t2.isSigned
+
+let eq_unop (u1:unop) (u2:unop) = match (u1,u2) with
+	| (Neg,Neg) -> true
+	| (BNot,BNot) -> true
+	| (LNot,LNot) -> true
+	| _ -> false
+
+let eq_binop (b1:binop) (b2:binop) = match (b1,b2) with
+	| (PlusA,PlusA) -> true
+	| (MinusA,MinusA) -> true
+	| (Mult,Mult) -> true
+	| (Div,Div) -> true
+	| (Mod,Mod) -> true
+	| (Shiftlt,Shiftlt) -> true
+	| (Shiftrt,Shiftrt) -> true
+	| (Lt,Lt) -> true
+	| (Gt,Gt) -> true
+	| (Le,Le) -> true
+	| (Ge,Ge) -> true
+	| (Eq,Eq) -> true
+	| (Ne,Ne) -> true
+	| (BAnd,BAnd) -> true
+	| (BXor,BXor) -> true
+	| (BOr,BOr) -> true
+	| _ -> false
+
+let eq_operation_type (ot1:voperationtype) (ot2:voperationtype) = 
+	match (ot1,ot2) with
+	| (Variable v1, Variable v2) when v1.varname = v2.varname -> true
+	| (Constant c1, Constant c2) when (eq_big_int c1.value c2.value && eq_type c1.ctype c2.ctype) -> true
+	| (Result (v1, o1), Result (v2, o2)) when v1.varname = v2.varname && o1.oid = o2.oid -> true
+	| (Unary (u1,o1,t1), Unary (u2,o2,t2)) when eq_unop u1 u2 && o1.oid = o2.oid && eq_type t1 t2 -> true
+	| (Binary (b1,o11,o21,t1), Binary(b2,o12,o22,t2)) when eq_binop b1 b2 && o11.oid = o12.oid && o21.oid = o22.oid && eq_type t1 t2 -> true
+	| _ -> false
+
+let eq_operation (o1:voperation) (o2:voperation) = 
+	o1.oid = o2.oid && eq_operation_type o1.operation o2.operation
+
 let replaceone (reps :(voperation*voperation) list) (op: voperation) = 
 	try snd (List.find (fun (f,_) -> f.oid = op.oid) reps)
 	with | Not_found -> op
 
-let replaceoperations (reps :(voperation*voperation) list) (ops :voperation list) = List.map 
+let replaceconditions (reps :(voperation*voperation) list) (cs:vconnection list) = List.iter
+	(fun c -> let req = 
+		match c.requires with
+			| None -> None
+			| Some (o,b) -> Some (replaceone reps o,b)
+		in c.requires <- req
+	) cs
+
+let replaceoperations (reps :(voperation*voperation) list) (ops :voperation list) = List.iter 
 	(fun o -> let op = 
 		match o.operation with
 			| Result (v,o1) -> Result(v,replaceone reps o1)
 			| Unary (u,o1,t) -> Unary(u,replaceone reps o1,t)
 			| Binary (b,o1,o2,t) -> Binary(b,replaceone reps o1, replaceone reps o2,t)
 			| _ -> o.operation
-		in {oid=o.oid; operation = op}
+		in o.operation <- op
 	) ops
 
 let mergemodules (m1:vmodule) (m2:vmodule) = 
@@ -386,10 +430,10 @@ let mergemodules (m1:vmodule) (m2:vmodule) =
 				) m1.mdataFlowGraph -> false
 			| _ -> true
 		) m2.mdataFlowGraph
-	in ret.mdataFlowGraph <- List.rev_append first_half 
-			(replaceoperations !replacements second_half);
+	in replaceoperations !replacements second_half;
+		ret.mdataFlowGraph <- List.rev_append first_half second_half;
 		List.iter (fun c -> c.connectfrom <- Some ret.mid) ret.moutputs;
-		List.iter (fun c -> c.connectto <- Some ret.mid) ret.minputs;
+		replaceconditions !replacements ret.moutputs;
 		ret;; 
 
 let rec compactmodules (acc:vmodule list) (mods:vmodule list) =
@@ -416,8 +460,7 @@ let generateconnections (m:funmodule) = List.iter
 			match c.connectto with
 				| Some i -> List.iter 
 					(fun m2 -> if m2.mid = i 
-						then (m.vcontrolconnections <- (c:: m.vcontrolconnections);
-							 m2.minputs <- (c :: m2.minputs))
+						then m2.minputs <- (c :: m2.minputs)
 						else ()
 					) m.vmodules
 				| None -> ()
@@ -426,13 +469,11 @@ let generateconnections (m:funmodule) = List.iter
 	let count = ref 0
 	in List.iter (fun m1 -> if List.length m1.minputs = 0 
 		then (count := !count + 1;
-			m.vcontrolconnections <- 
-				{connectfrom = None; connectto = Some m1.mid; requires = None} :: m.vcontrolconnections;
 			m1.minputs <- [{connectfrom = None; connectto = Some m1.mid; requires = None}])
 		else ()
 	) m.vmodules;
 	if not (!count = 1) 
-		then E.s (E.error "%d != 1 entry points to function %s" !count m.vdesc.varname)
+		then E.s (E.error "%d <> 1 entry points to function %s" !count m.vdesc.varname)
 	;;
 
 let variablecull (f:funmodule) = 
@@ -487,24 +528,91 @@ let variablecull (f:funmodule) =
 	)
 	f.vinputs
 
+let incoperationcount (op:voperation) = 
+	op.ousecount <- op.ousecount + 1
+
+let decoperationcount (op:voperation) = 
+	op.ousecount <- op.ousecount - 1
+
+let dotoimmediatechildren (f:voperation -> unit) (op:voperation) = 
+	match op.operation with
+	| Unary(_,o,_) -> f o
+	| Binary(_,o1,o2,_) -> f o1; f o2
+	| Result(_,o) -> f o
+	| _ -> ()
+
+let incchildren = dotoimmediatechildren incoperationcount;;
+let decchildren = dotoimmediatechildren decoperationcount;;
+
+let rec dooperationcounts (cs:vconnection list) (ops:voperation list) = 
+	List.iter incchildren ops;
+	List.iter (fun o -> match o.operation with
+	| Result (_,_) -> incoperationcount o
+	| _ -> ()) ops;
+	List.iter (fun c -> match c.requires with
+		| None -> ()
+		| Some (o,_) -> incoperationcount o
+	) cs
+
+let generateoperationcounts (f:funmodule) = 
+	List.iter (fun m -> dooperationcounts m.moutputs m.mdataFlowGraph) f.vmodules
+
+let rec pruneoperations (os:voperation list) =
+	if List.exists (fun o -> o.ousecount = 0) os
+	then pruneoperations (List.filter (fun o -> if o.ousecount = 0 then (decchildren o; false) else true) os)
+	else os
+
+let childreninlist (default:bool) (o:voperation) (l:voperation list) = 
+	match o.operation with
+	| Result (_,o1) -> List.memq o1 l
+	| Unary (_,o1,_) -> List.memq o1 l
+	| Binary (_,o1,o2,_) -> List.memq o1 l && List.memq o2 l
+	| _ -> default
+
+let rec compactoperations (c:vconnection list) (acc:voperation list) (skip:voperation list) (ops:voperation list) = 
+	match ops with
+	| [] -> (match skip with
+		| [] -> acc
+		| _ -> compactoperations c acc [] skip
+	)
+	| h::t -> if(childreninlist true h acc)
+		then
+			let (eqs,neqs) = 
+				List.partition (fun o -> eq_operation_type h.operation o.operation) t
+			in let replacements = List.map (fun o -> (o,h)) eqs
+			in replaceoperations replacements acc;
+				replaceoperations replacements neqs;
+				replaceconditions replacements c;
+				compactoperations c (h::acc) skip neqs
+		else compactoperations c acc (h::skip) t
+
+let culloperations (f:funmodule) = List.iter
+	(fun m -> 
+		m.mdataFlowGraph <- pruneoperations m.mdataFlowGraph
+	) f.vmodules;
+	List.iter (fun m ->
+		m.mdataFlowGraph <- compactoperations m.moutputs [] [] m.mdataFlowGraph
+	) f.vmodules;;
+
 let funtofunmodule (f:fundec) :funmodule = let _ = dataid := 0; 
 	in let vardesc = generatedesc f.svar
 	in let ret = {
 		vdesc = vardesc;
 		vinputs = generatevariables f.sformals;
 		vlocals = generatevariables f.slocals;
-		vcontrolconnections = [];
 		vmodules = List.map (generatemodule vardesc) f.sallstmts;
 	} in begin
-		generateconnections ret;  (* Generate connections for compacting to use *)
-		ret.vmodules <- compactmodules [] ret.vmodules;
-		(* Wipe the connections again, as they may now be inconsistent *)
-		List.iter (fun m -> m.minputs <- []) ret.vmodules;
-		ret.vcontrolconnections <- [];
-		(* Regenerate the connections *)
+		(* Generate connections for compacting to use *)
 		generateconnections ret;
+		(* Compact modules to a minimal set maintaining the same control flow *)
+		ret.vmodules <- compactmodules [] ret.vmodules;
 		(* Remove unused variables *)
 		variablecull ret;
+		(* Set up usage pointers for operation graphs *)
+		generateoperationcounts ret;
+		(* remove unused operations *)
+		culloperations ret;
+		(* return the result *)
 		ret
 	end
 
