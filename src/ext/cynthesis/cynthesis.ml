@@ -1,9 +1,10 @@
 open Cil
 open Feature
 module V = Vil
+module VA = Vast
 module E = Errormsg
 
-let printlevel = ref 16;;
+let printlevel = ref 48;;
 
 let cynthesize f = 
 	Simplify.feature.fd_doit f;
@@ -17,8 +18,10 @@ let cynthesize f =
 	if Validitycheck.check f 
 	then List.iter (fun glob -> match glob with
     	| GFun(fd,_) when fd.svar.vinline ->  let result = V.funtofunmodule fd 
+  			in let vresult = Viltovast.vil_to_vast result 
   			in  if(!printlevel land 8 <> 0) then E.log("%s\n") (V.string_of_funmodule result) else ();
   				if(!printlevel land 16 <> 0) then E.log("%s\n") (V.print_funmodule result) else ();
+  				if(!printlevel land 32 <> 0) then E.log("%s\n") (VA.vastmodule_to_verilog vresult) else ();
       			fd.svar.vinline <- false (* Temporary hack to stop gcc having a hissy fit*)
     	| _ -> ()
   	) f.globals
@@ -34,7 +37,8 @@ let feature =
 		"  2 - Print CFG info\n" ^
 		"  4 - Print a detailed CFG list\n" ^ 
 		"  8 - Dump all info about resulting module\n" ^
-		"  16 - Print resulting module\n")
+		"  16 - Print resulting module\n" ^
+    	"  32 - Print resulting verilog\n")
     ];
     fd_description = "verilog HLS of functions marked with 'inline'";
     fd_doit = cynthesize;

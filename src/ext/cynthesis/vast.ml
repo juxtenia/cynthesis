@@ -135,23 +135,24 @@ and vastmodule_to_verilog m =
 		^ ")\n" 
 	^ (String.concat "" (List.map 
 			(fun v -> (vastvariable_to_verilog v) ^ ";\n") m.locals))
-	^ "always_comb\n begin\n"
-		^ (String.concat "" (List.map 
-			(fun a -> (vastassignment_to_verilog a) ^ ";\n") m.always))
+	^ "always_comb\n    begin\n        "
+		^ (String.concat "    " (List.map 
+			(fun a -> (vastassignment_to_verilog a) ^ ";\n    ") m.always))
 		^ "end\n"
-	^ "always_ff @(posedge clock)\n if(rst)\n begin\n"
-			^ (String.concat "" (List.map 
+	^ "always_ff @(posedge clock)\n    if(rst)\n         begin\n            "
+			^ (String.concat "    " (List.map 
 				(fun v -> vastvariable_to_reset_assignment v) m.outputs))
-			^ (String.concat "" (List.map 
+			^ "    "
+			^ (String.concat "    " (List.map 
 				(fun v -> vastvariable_to_reset_assignment v) m.locals))
-		^ "else\n begin\n"
-			^ (String.concat "" (List.map 
-			(fun a -> (vastassignment_to_verilog a) ^ ";\n") m.clockedge))
-		^ "end\n"
+		^ "end\n    else\n        begin\n            "
+			^ (String.concat "        " (List.map 
+			(fun a -> (vastassignment_to_verilog a) ^ ";\n    ") m.clockedge))
+		^ "    end\n"
 	^ "endmodule // end of module " ^ m.modname
 and vastvariable_to_reset_assignment v = 
 	v.name ^ " = " ^ (string_of_int v.typ.width) ^ "'d" 
-				^ (string_of_big_int v.resetto) ^ ";\n"
+				^ (string_of_big_int v.resetto) ^ ";\n        "
 and vastvariable_to_verilog v = 
 	(vasttype_to_verilog v.typ) ^ " " ^ v.name
 and vastconstant_to_verilog c = (string_of_int c.cwidth) ^ "'d" ^ (string_of_big_int c.value)
