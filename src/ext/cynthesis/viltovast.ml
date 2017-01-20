@@ -13,6 +13,14 @@ let vil_to_vast_variable (l:vastlogic) (v:vvarinfo) :vastvariable = {
 	typ = vil_to_vast_type l v.vtype;
 }
 
+let addregvar (r:vastmodule) (v:vastlval) (b:bool) (e:vastexpression) =
+	r.locals <- v.variable :: r.locals;
+	r.clockedge <- {var=v; assign=e; blocking=b;} :: r.clockedge
+
+let addwirevar (r:vastmodule) (v:vastlval) (b:bool) (e:vastexpression) =
+	r.locals <- v.variable :: r.locals;
+	r.always <- ({var=v; assign=e; blocking=b;} :: r.always)
+
 let vil_to_vast_module (r:vastmodule) (m:vmodule) =
 	()
 

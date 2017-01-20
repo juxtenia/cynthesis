@@ -1,5 +1,4 @@
 open Big_int
-open Cil
 module E = Errormsg
 
 (** Unary Operations*)
@@ -61,6 +60,8 @@ and vconnection = {
 and vmodule = {
 	mutable mid: int;
 		(** The id of this module in the function *)
+	mutable mvars: vvarinfo list;
+		(** The variables inputed to this module *)
 	mutable minputs: vconnection list;
 		(** The incoming connections *)
 	mutable moutputs: vconnection list;
@@ -191,6 +192,7 @@ and string_of_vtype t =
 	"{ width:" ^ (string_of_int t.width)
 	^ ", isSigned:" ^ (string_of_bool t.isSigned)
 	^ "}"
+
 (*  The following functions attempt to give a quick readable
  *  output from the various types, intented for console output
  *)
@@ -240,8 +242,9 @@ and print_vconnections (c:vconnection list) = match c with
 	)
 	| _ -> "[" ^ (String.concat ", " (List.map string_of_vconnection c)) ^ "]"
 and print_vmodule m = 
-	(string_of_int m.mid) ^ " " ^ (print_vconnections m.moutputs)
-	^ "\n\t\t" ^ (String.concat "\n\t\t" (List.map print_voperation m.mdataFlowGraph))
+	(string_of_int m.mid) ^ " " ^ (print_vconnections m.moutputs) 
+	^ "    ( " ^ (String.concat ", " (List.map (fun v -> v.varname) m.mvars))
+	^ " )\n\t\t" ^ (String.concat "\n\t\t" (List.map print_voperation m.mdataFlowGraph))
 and print_voperation o = 
 	(string_of_int o.oid) ^ " ==== " ^ (print_voperationtype o.operation)
 and print_voperationtype vt = match vt with
@@ -255,205 +258,18 @@ and print_voperationtype vt = match vt with
 and print_vtype t = 
 	(string_of_int t.width) ^ "'" ^ if t.isSigned then "s" else "u"
 
-(* id for operations, reset each time a function is synthesised *)
-let dataid = ref 0;;
 
-(* gives whether a type is signed *)
-let rec typesigned (t:typ) :bool = match t with
-	| TInt(ik,_) -> isSigned ik
-	| TNamed(ti,_) -> typesigned ti.ttype
-	| TComp(_,_) -> false
-	| TEnum(_,_) -> false
-	| _ -> E.s (E.error "Illegal type %a.\n" d_type t)
 
-(* generates a vtype from a Cil typ *)
-let generatetype (t:typ) :vtype = 
-	{
-		width = bitsSizeOf t;
-		isSigned = typesigned t;
-	}
-
-(* generates a unop from a Cil unop *)
-let generateunop (u:Cil.unop) :unop = match u with
-	| Neg -> Neg
-	| BNot -> BNot
-	| LNot -> LNot
-
-(* generates a binop from a Cil binop *)
-let generatebinop (b:Cil.binop) :binop = match b with
-	| PlusA -> PlusA
-	| MinusA -> MinusA
-	| Mult -> Mult
-	| Div -> Div
-	| Mod -> Mod
-	| Shiftlt -> Shiftlt
-	| Shiftrt -> Shiftrt
-	| Lt -> Lt
-	| Gt -> Gt
-	| Le -> Le
-	| Ge -> Ge
-	| Eq -> Eq
-	| Ne -> Ne
-	| BAnd -> BAnd
-	| BXor -> BXor
-	| BOr -> BOr
-	| _ -> E.s (E.error "Illegal operation %a.\n" d_binop b) 
-
-(* generates a description for a function from the Cil varinfo *)
-let generatedesc (d:varinfo) :vvarinfo =
-	match d.vtype with
-	| TFun(t,Some a, false, _) -> 
-		{ varname = d.vname; vtype = (generatetype t) }
-	| _ -> E.s (E.error "Illegal type %a.\n" d_type d.vtype) 
-
-(* generates a vvarinfo from a Cil varinfo *)
-let generatevariable (v:varinfo) :vvarinfo = 
-	{
-		varname = v.vname;
-		vtype = generatetype v.vtype;
-	}
-
-(* generates a vconstinfo from a Cil constant *)
-let generateconstant (c:constant) :vconstinfo = match c with
-	| CInt64 (i64,k,_) -> {
-		value = big_int_of_string (Int64.to_string i64); 
-		ctype = generatetype (TInt (k,[]))
-	}
-	(** TODO ADD EXTRA constant types**)
-	| _ -> E.s (E.error "Illegal constant %a.\n" d_const c) 
-
-(* generates a list of vvarinfo from a list of Cil varinfo *)
-let generatevariables (vs:varinfo list) :vvarinfo list =
-	List.map generatevariable vs
-
-(* generates an operation (adds it to m) from a operation type *)
-let generateoperation (m:vmodule) (ot:voperationtype) = 
-	let ret = {oid = !dataid; operation = ot; ousecount = 0; oschedule=emptyschedule}
-    in dataid:= !dataid + 1;
-    	m.mdataFlowGraph <- ret::m.mdataFlowGraph;
-    	ret;;
-
-(* the default function for getting an operation for a variable *)
-let defaultvariables (m:vmodule) (v:vvarinfo) :voperation = 
-	generateoperation m (Variable (v))
-
-(* generates appropriate operations in m for the expression.
- * variables are resolved using vars *)
-let rec generatedataflow (vars:vvarinfo -> voperation) (m:vmodule) (e:exp) :voperation = 
-	match e with
-		| Const c -> generateoperation m (Constant (generateconstant c))
-  		| Lval l -> (match l with
-  			| (Var(v),NoOffset) -> vars (generatevariable v)
-  			| _ -> E.s (E.error "Illegal lvalue %a.\n" d_lval l)
-  		)
-  		| UnOp (u,e1,t) -> generateoperation m (
-  			Unary (generateunop u, generatedataflow vars m e1, generatetype t))
-  		| BinOp (b,e1,e2,t) -> generateoperation m (Binary (
-  			generatebinop b, generatedataflow vars m e1, 
-  			generatedataflow vars m e2, generatetype t))
-  		| CastE (t,e1) -> generateoperation m (
-  			Unary (Cast, generatedataflow vars m e1, generatetype t))
-  		| _ -> E.s (E.error "Illegal expression %a.\n" d_exp e)   	
-
-(* generates a result for a given variable *)
-let generateresult (m:vmodule) (o:voperation) (v:vvarinfo) :voperation =
-	let optype = Result (v,o) in generateoperation m optype;;
-
-(* generates operations for a Cil exp *)
-let generateexp (m:vmodule) (e:exp) :voperation = 
-	generatedataflow (defaultvariables m) m e;;
-
-(* generates operations from a list of Cil instr *)
-let rec generateinstrlist (ass:voperation list) (vars:vvarinfo -> voperation) (m:vmodule) (il:instr list) =
-	match il with
-	| h::t -> (match h with
-		| Set (lv,e,l) -> (match lv with
-  			| (Var(v),NoOffset) -> 
-  				let result = generatedataflow vars m e
-  				in let var = generatevariable v
-  				in let as1 = 
-  					if List.exists  
-  						(fun f -> match f.operation with
-  							| Result (i,o) when i.varname = var.varname -> 
-  								f.operation <- Result (i,result); true
-  							| _ -> false
-  						) ass
-  					then ass
-  					else (generateresult m result var) :: ass;
-  				in generateinstrlist as1 (fun v -> if v.varname = var.varname then result else vars v) m t
-  			| _ -> E.s (E.error "Illegal lvalue %a.\n" d_lval lv)
-  		)
-		| Call (_,_,_,l) -> E.s (E.error "At %a illegal instr %a.\n" d_loc l d_instr h) 
-		| Asm (_,_,_,_,_,l) -> E.s (E.error "At %a illegal instr %a.\n" d_loc l d_instr h) 
-	)
-	| [] -> ()
-
-(* generates a module from a Cil stmt *)
-let generatemodule (v:vvarinfo) (s:stmt) :vmodule = 
-	let ret = 
-	{
-		mid = s.sid;
-		minputs = [];
-		moutputs = [];
-		mdataFlowGraph = [];
-	} in begin 
-		(match s.skind with
-			| Instr (il) -> (match s.succs with
-  				| h::[] -> ret.moutputs <- {connectfrom = Some s.sid; connectto = Some h.sid; requires = None} :: []
-  				| _ -> E.s (E.error "Stmt %a has incorrect successors\n" d_stmt s)
-  			); generateinstrlist [] (defaultvariables ret) ret il
-  			| Return (eo,l) -> (match eo with
-  					| None -> ()
-  					| Some e -> ignore (generateresult ret (generateexp ret e) v)
-  				);
-  				(match s.succs with
-  					| [] -> ret.moutputs <- {connectfrom = Some s.sid; connectto = None; requires = None} :: []
-  					| _ -> E.s (E.error "At %a stmt %a has incorrect successors\n" d_loc l d_stmt s)
-  				)
-  			| Goto (_,l) -> (match s.succs with
-  				| h::[] -> ret.moutputs <- {connectfrom = Some s.sid; connectto = Some h.sid; requires = None} :: []
-  				| _ -> E.s (E.error "At %a stmt %a has incorrect successors\n" d_loc l d_stmt s)
-  			)
-  			| Break (l) -> (match s.succs with
-  				| h::[] -> ret.moutputs <- {connectfrom = Some s.sid; connectto = Some h.sid; requires = None} :: []
-  				| _ -> E.s (E.error "At %a stmt %a has incorrect successors\n" d_loc l d_stmt s)
-  			)
-  			| Continue (l) -> (match s.succs with
-  				| h::[] -> ret.moutputs <- {connectfrom = Some s.sid; connectto = Some h.sid; requires = None} :: []
-  				| _ -> E.s (E.error "At %a stmt %a has incorrect successors\n" d_loc l d_stmt s)
-  			)
-  			| If (e,b1,b2,l) -> let result = generateexp ret e
-  				in (match s.succs with
-  				| fb::tb::[] -> ret.moutputs <- 
-  					{connectfrom = Some s.sid; connectto = Some tb.sid; requires = Some (result,true)} ::
-  					{connectfrom = Some s.sid; connectto = Some fb.sid; requires = Some (result,false)} :: []
-  				| _ -> E.s (E.error "At %a stmt %a has incorrect successors\n" d_loc l d_stmt s)
-  				)
-  			| Loop (_,l,_,_) -> (match s.succs with
-  				| h::[] -> ret.moutputs <- {connectfrom = Some s.sid; connectto = Some h.sid; requires = None} :: []
-  				| _ -> E.s (E.error "At %a stmt %a has incorrect successors\n" d_loc l d_stmt s)
-  			)
-  			| Block (_) -> (match s.succs with
-  				| h::[] -> ret.moutputs <- {connectfrom = Some s.sid; connectto = Some h.sid; requires = None} :: []
-  				| _ -> E.s (E.error "Stmt %a has incorrect successors\n" d_stmt s)
-  			)
-  			| _ -> E.s (E.error "Illegal stmt %a.\n" d_stmt s) 
-  		);
-  		ret
-	end
-
-(* gives if two types are equal *)
+(* the following functions check for equality between various types
+ * there is several pieces of information left out, if it's not deemed
+ * necessary to the equality test *)
 let eq_type (t1:vtype) (t2:vtype) = 
 	t1.width = t2.width && t1.isSigned = t2.isSigned
-
-(* gives if two unops are equal *)
 let eq_unop (u1:unop) (u2:unop) = match (u1,u2) with
 	| (Neg,Neg) -> true
 	| (BNot,BNot) -> true
 	| (LNot,LNot) -> true
 	| _ -> false
-
-(* gives if two binops are equal *)
 let eq_binop (b1:binop) (b2:binop) = match (b1,b2) with
 	| (PlusA,PlusA) -> true
 	| (MinusA,MinusA) -> true
@@ -472,8 +288,6 @@ let eq_binop (b1:binop) (b2:binop) = match (b1,b2) with
 	| (BXor,BXor) -> true
 	| (BOr,BOr) -> true
 	| _ -> false
-
-(* gives if two operationtypes are equal *)
 let eq_operation_type (ot1:voperationtype) (ot2:voperationtype) = 
 	match (ot1,ot2) with
 	| (Variable v1, Variable v2) when v1.varname = v2.varname -> true
@@ -482,178 +296,60 @@ let eq_operation_type (ot1:voperationtype) (ot2:voperationtype) =
 	| (Unary (u1,o1,t1), Unary (u2,o2,t2)) when eq_unop u1 u2 && o1.oid = o2.oid && eq_type t1 t2 -> true
 	| (Binary (b1,o11,o21,t1), Binary(b2,o12,o22,t2)) when eq_binop b1 b2 && o11.oid = o12.oid && o21.oid = o22.oid && eq_type t1 t2 -> true
 	| _ -> false
-
-(* gives if two operations are equal *)
 let eq_operation (o1:voperation) (o2:voperation) = 
 	o1.oid = o2.oid && eq_operation_type o1.operation o2.operation
+let getchildren (o:voperation) = 
+	match o.operation with
+	| Result (_,o1) -> [o1]
+	| Unary (_,o1,_) -> [o1]
+	| Binary (_,o1,o2,_) -> [o1;o2]
+	| _ -> []
+let childreninlist (default:bool) (o:voperation) (l:voperation list) = 
+	match o.operation with
+	| Result (_,o1) -> List.memq o1 l
+	| Unary (_,o1,_) -> List.memq o1 l
+	| Binary (_,o1,o2,_) -> List.memq o1 l && List.memq o2 l
+	| _ -> default
+let operationoffset (o:voperation) = match o.operation with
+	| Unary (Cast,_,_) -> 0 (* cast is instant *)
+	| Unary (_,_,_)  
+	| Binary(_,_,_,_) -> 1 (* other operators take 1 step *)
+	| _ -> 0 (* results, consts and variables are instant *)
 
-(* gives the result of running all replacements in reps on the operation op *)
-let replaceone (reps :(voperation*voperation) list) (op: voperation) = 
-	try snd (List.find (fun (f,_) -> f.oid = op.oid) reps)
-	with | Not_found -> op
+(* helper functions for manipulating vil objects *)
 
-(* replace the targeted operations in condition requirements *)
-let replaceconditions (reps :(voperation*voperation) list) (cs:vconnection list) = List.iter
-	(fun c -> let req = 
-		match c.requires with
-			| None -> None
-			| Some (o,b) -> Some (replaceone reps o,b)
-		in c.requires <- req
-	) cs
+let getentrypoint (f:funmodule) = List.find (fun m -> match m.minputs with
+		| [{connectfrom=None;connectto=Some _;requires=None}] -> true
+		| _ -> false
+	) f.vmodules
 
-(* replace operations in the sub trees of operations in the list *)
-let replaceoperations (reps :(voperation*voperation) list) (ops :voperation list) = List.iter 
-	(fun o -> let op = 
-		match o.operation with
-			| Result (v,o1) -> Result(v,replaceone reps o1)
-			| Unary (u,o1,t) -> Unary(u,replaceone reps o1,t)
-			| Binary (b,o1,o2,t) -> Binary(b,replaceone reps o1, replaceone reps o2,t)
-			| _ -> o.operation
-		in o.operation <- op
-	) ops
+(* extracts module from an id *)
+let modulefromintoption (f:funmodule) (io:int option) = match io with
+	| Some i -> Some (List.find (fun m -> m.mid = i) f.vmodules)
+	| None -> None
 
-(* merge two modules together *)
-let mergemodules (m1:vmodule) (m2:vmodule) = 
-	let ret = {
-			mid = m1.mid;
-			minputs = m1.minputs;
-			moutputs = m2.moutputs;
-			mdataFlowGraph = [];
-		}
-	(* remove result tags if one exists in second module *)
-	in let first_half = List.filter 
-		(fun o -> match o.operation with
-			| Result(i,_) when List.exists 
-				(fun o1 -> match o1.operation with
-					| Result(i1,_) when i1.varname = i.varname -> true
-					| _ -> false
-				) m2.mdataFlowGraph -> false
-			| _ -> true
-		) m1.mdataFlowGraph
-	(* things to replace, variable references and what they 
-	 * were set to in the first module *)
-	in let replacements = ref []
-	(* remove variable accesses that were set in first module and add replacements *)
-	in let second_half = List.filter
-		(fun o -> match o.operation with
-			| Variable i when List.exists 
-				(fun o1 -> match o1.operation with
-					| Result(i1,o2) when i1.varname = i.varname -> 
-						replacements := (o,o2) :: !replacements;
-						true
-					| _ -> false
-				) m1.mdataFlowGraph -> false
-			| _ -> true
-		) m2.mdataFlowGraph
-	in  (* do replacements *)
-		replaceoperations !replacements second_half;
-		(* join the two together (rev_append is tail recursive) *)
-		ret.mdataFlowGraph <- List.rev_append first_half second_half;
-		(* update the id's of the connections *)
-		List.iter (fun c -> c.connectfrom <- Some ret.mid) ret.moutputs;
-		(* do the same replacements on the condiditons *)
-		replaceconditions !replacements ret.moutputs;
-		(* return *)
-		ret;; 
+(* gives a sucessor list *)
+let getmodulesucessors (f:funmodule) (m:vmodule) :vmodule list = 
+	Listutil.mapfilter (fun c -> modulefromintoption f c.connectto) m.moutputs
 
-(* merge modules with redundant control flow *)
-let rec compactmodules (acc:vmodule list) (mods:vmodule list) =
-	match mods with
-	| [] -> acc
-	| h::t -> (match h.moutputs with
-		| [{connectfrom = Some cfrom; connectto = Some cto; requires = None}] ->
-			let filt = (fun m -> m.mid = cto)
-			in let (it,rem,ac1) = if List.exists filt acc
-				then let (it1,ac2) = List.partition filt acc in (it1,t,ac2)
-				else let (it1,rem1) = List.partition filt t in (it1,rem1,acc)
-			in (match it with
-				| [m] -> if (List.length m.minputs = 1)
-					(* add merged module to head of list in case of further merges *)
-					then compactmodules ac1 ((mergemodules h m) :: rem)
-					(* skip module *)
-					else compactmodules (h :: acc) t
-				| _ -> E.s (E.error "Incorrect module connections or ids: [%s]" (String.concat ", " (List.map string_of_vmodule it)))
-			)
-		| _ -> compactmodules (h :: acc) t
-	)
+(* gives a predecessor list *)
+let getmodulepredecessors (f:funmodule) (m:vmodule) :vmodule list = 
+	Listutil.mapfilter (fun c -> modulefromintoption f c.connectfrom) m.minputs
 
-(* generate minputs for modules *)
-let generateconnections (m:funmodule) = List.iter 
-	(fun m1 -> List.iter 
-		(fun c ->
-			match c.connectto with
-				| Some i -> List.iter 
-					(fun m2 -> if m2.mid = i 
-						then m2.minputs <- (c :: m2.minputs)
-						else ()
-					) m.vmodules
-				| None -> ()
-		) m1.moutputs
-	) m.vmodules;
-	let count = ref 0
-	in List.iter (fun m1 -> if List.length m1.minputs = 0 
-		then (count := !count + 1; 
-			m1.minputs <- [{connectfrom = None; connectto = Some m1.mid; requires = None}])
-		else ()
-	) m.vmodules;
-	if not (!count = 1) 
-		then E.s (E.error "%d <> 1 entry points to function %s" !count m.vdesc.varname)
-	;;
+let variableinlist (v:vvarinfo) (l:vvarinfo list) = 
+	List.exists (fun v1 -> v1.varname = v.varname) l
 
-(* remove unused variables (caused by merging modules) *)
-let variablecull (f:funmodule) = 
-	(* remove unused locals all together *)
-	f.vlocals <- List.filter
-	(fun v -> 
-		let ret = List.exists 
-			(fun m ->
-				List.exists
-				(fun o -> 
-					match o.operation with
-						| Variable v1 when v1.varname = v.varname -> true
-						| _ -> false
-				)
-				m.mdataFlowGraph
-			) f.vmodules
-		in
-			if not ret 
-			then List.iter 
-				(fun m -> 
-					m.mdataFlowGraph <- List.filter (fun o -> 
-						match o.operation with
-							| Result (v1,_) when v1.varname = v.varname -> false
-							| _ -> true
-					) m.mdataFlowGraph
-				) f.vmodules;
-			ret
-	)
-	f.vlocals;
-	(* can't remove function arguments for compatability, but can remove assignments *)
-	List.iter
-	(fun v -> 
-		let ret = List.exists 
-			(fun m ->
-				List.exists
-				(fun o -> 
-					match o.operation with
-						| Variable v1 when v1.varname = v.varname -> true
-						| _ -> false
-				)
-				m.mdataFlowGraph
-			) f.vmodules
-		in
-			if not ret 
-			then List.iter 
-				(fun m -> 
-					m.mdataFlowGraph <- List.filter (fun o -> 
-						match o.operation with
-							| Result (v1,_) when v1.varname = v.varname -> false
-							| _ -> true
-					) m.mdataFlowGraph
-				) f.vmodules
-			else ()
-	)
-	f.vinputs
+let hasvariableresult (v:vvarinfo) (m:vmodule) = 
+	List.exists (fun op -> match op.operation with
+			| Result (v1,_) when v1.varname = v.varname -> true
+			| _ -> false
+		) m.mdataFlowGraph
+
+let hasvariableuse (v:vvarinfo) (m:vmodule) = 
+	List.exists (fun op -> match op.operation with
+			| Variable v1 when v1.varname = v.varname -> true
+			| _ -> false
+		) m.mdataFlowGraph
 
 (* increment operation use count *)
 let incoperationcount (op:voperation) = 
@@ -675,77 +371,7 @@ let dotoimmediatechildren (f:voperation -> unit) (op:voperation) =
 let incchildren = dotoimmediatechildren incoperationcount;;
 let decchildren = dotoimmediatechildren decoperationcount;;
 
-(* build operation counts *)
-let rec dooperationcounts (cs:vconnection list) (ops:voperation list) = 
-	List.iter incchildren ops;
-	List.iter (fun o -> match o.operation with
-	| Result (_,_) -> incoperationcount o
-	| _ -> ()) ops;
-	List.iter (fun c -> match c.requires with
-		| None -> ()
-		| Some (o,_) -> incoperationcount o
-	) cs
-
-(* generate operation counts for all modules *)
-let generateoperationcounts (f:funmodule) = 
-	List.iter (fun m -> dooperationcounts m.moutputs m.mdataFlowGraph) f.vmodules
-
-(* remove unreferenced ops, update children, repeat *)
-let rec pruneoperations (os:voperation list) =
-	if List.exists (fun o -> o.ousecount = 0) os
-	then pruneoperations (List.filter (fun o -> if o.ousecount = 0 then (decchildren o; false) else true) os)
-	else os
-
-(* gives whether the children of o are in l, or default if o has no children *)
-let childreninlist (default:bool) (o:voperation) (l:voperation list) = 
-	match o.operation with
-	| Result (_,o1) -> List.memq o1 l
-	| Unary (_,o1,_) -> List.memq o1 l
-	| Binary (_,o1,o2,_) -> List.memq o1 l && List.memq o2 l
-	| _ -> default
-
-(* removes duplicate operations *)
-let rec compactoperations (c:vconnection list) (acc:voperation list) (skip:voperation list) (ops:voperation list) = 
-	match ops with
-	| [] -> (match skip with
-		| [] -> acc
-		| _ -> compactoperations c acc [] skip
-	)
-	| h::t -> if(childreninlist true h acc)
-		then
-			let (eqs,neqs) = 
-				List.partition (fun o -> eq_operation_type h.operation o.operation) t
-			in let replacements = List.map (fun o -> (o,h)) eqs
-			in  replaceoperations replacements acc;
-				replaceoperations replacements neqs;
-				replaceoperations replacements skip;
-				replaceconditions replacements c;
-				compactoperations c (h::acc) skip neqs
-		else compactoperations c acc (h::skip) t
-
-(* optimises away unecessary operations *)
-let culloperations (f:funmodule) = List.iter
-	(fun m -> 
-		m.mdataFlowGraph <- pruneoperations m.mdataFlowGraph
-	) f.vmodules;
-	List.iter (fun m ->
-		m.mdataFlowGraph <- compactoperations m.moutputs [] [] m.mdataFlowGraph
-	) f.vmodules;;
-
-(* gets the children of an op *)
-let getchildren (o:voperation) = 
-	match o.operation with
-	| Result (_,o1) -> [o1]
-	| Unary (_,o1,_) -> [o1]
-	| Binary (_,o1,o2,_) -> [o1;o2]
-	| _ -> []
-
-(* gets the number of steps an operation takes *)
-let operationoffset (o:voperation) = match o.operation with
-	| Unary (Cast,_,_) -> 0 (* cast is instant *)
-	| Unary (_,_,_)  
-	| Binary(_,_,_,_) -> 1 (* other operators take 1 step *)
-	| _ -> 0 (* results, consts and variables are instant *)
+(* code for filling in the schedule *)
 
 (* sets the asap schedule for o *)
 let asap (o:voperation) = o.oschedule <- 
@@ -795,37 +421,4 @@ let generatescheduleinfo (f:funmodule) =
 			0 m.mdataFlowGraph) [] m.mdataFlowGraph;
 		generateschedule m;
 	) f.vmodules
-
-(* removes all stmts with no preds, excluding the first statement *)
-let extractminentry (ss:stmt list) :stmt list = 
-	match ss with 
-		| [] -> E.s (E.error "Empty function body")
-		| h::t -> h::(List.filter (fun s -> (List.length s.preds) <> 0) t)
-
-(* turns a cil fundec into a vil funmodule *)
-let funtofunmodule (f:fundec) :funmodule = dataid := 0; (* Reset op ids *)
-	(* generate variable for function *)
-	let vardesc = generatedesc f.svar
-	(* basic starting point *)
-	in let ret = {
-		vdesc = vardesc;
-		vinputs = generatevariables f.sformals;
-		vlocals = generatevariables f.slocals;
-		vmodules = List.map (generatemodule vardesc) (extractminentry f.sallstmts);
-	} in begin
-		(* Generate connections for compacting to use *)
-		generateconnections ret;
-		(* Compact modules to a minimal set maintaining the same control flow *)
-		ret.vmodules <- compactmodules [] ret.vmodules;
-		(* Remove unused variables *)
-		variablecull ret;
-		(* Set up usage pointers for operation graphs *)
-		generateoperationcounts ret;
-		(* remove unused operations *)
-		culloperations ret;
-		(* schedule *)
-		generatescheduleinfo ret;
-		(* return the result *)
-		ret
-	end
 

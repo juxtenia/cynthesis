@@ -154,7 +154,7 @@ and vastvariable_to_reset_assignment v =
 	v.name ^ " = " ^ (string_of_int v.typ.width) ^ "'d" 
 				^ (string_of_big_int v.resetto) ^ ";\n        "
 and vastvariable_to_verilog v = 
-	(vasttype_to_verilog v.typ) ^ " " ^ v.name
+	(vasttype_to_verilog v.typ) ^ v.name
 and vastconstant_to_verilog c = (string_of_int c.cwidth) ^ "'d" ^ (string_of_big_int c.value)
 and vasttype_to_verilog t = 
 	(if t.isSigned then "signed " else "")

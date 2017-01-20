@@ -1,0 +1,208 @@
+open Big_int
+open Vil
+open Cil
+
+(* id for operations, reset each time a function is synthesised *)
+let dataid = ref 0;;
+
+(* gives whether a type is signed *)
+let rec typesigned (t:typ) :bool = match t with
+	| TInt(ik,_) -> isSigned ik
+	| TNamed(ti,_) -> typesigned ti.ttype
+	| TComp(_,_) -> false
+	| TEnum(_,_) -> false
+	| _ -> E.s (E.error "Illegal type %a.\n" d_type t)
+
+(* generates a vtype from a Cil typ *)
+let generatetype (t:typ) :vtype = 
+	{
+		width = bitsSizeOf t;
+		isSigned = typesigned t;
+	}
+
+(* generates a unop from a Cil unop *)
+let generateunop (u:Cil.unop) :Vil.unop = match u with
+	| Neg -> Neg
+	| BNot -> BNot
+	| LNot -> LNot
+
+(* generates a binop from a Cil binop *)
+let generatebinop (b:Cil.binop) :Vil.binop = match b with
+	| PlusA -> PlusA
+	| MinusA -> MinusA
+	| Mult -> Mult
+	| Div -> Div
+	| Mod -> Mod
+	| Shiftlt -> Shiftlt
+	| Shiftrt -> Shiftrt
+	| Lt -> Lt
+	| Gt -> Gt
+	| Le -> Le
+	| Ge -> Ge
+	| Eq -> Eq
+	| Ne -> Ne
+	| BAnd -> BAnd
+	| BXor -> BXor
+	| BOr -> BOr
+	| _ -> E.s (E.error "Illegal operation %a.\n" d_binop b) 
+
+(* generates a description for a function from the Cil varinfo *)
+let generatedesc (d:varinfo) :vvarinfo =
+	match d.vtype with
+	| TFun(t,Some a, false, _) -> 
+		{ varname = d.vname; vtype = (generatetype t) }
+	| _ -> E.s (E.error "Illegal type %a.\n" d_type d.vtype) 
+
+(* generates a vvarinfo from a Cil varinfo *)
+let generatevariable (v:varinfo) :vvarinfo = 
+	{
+		varname = v.vname;
+		vtype = generatetype v.vtype;
+	}
+
+(* generates a vconstinfo from a Cil constant *)
+let generateconstant (c:constant) :vconstinfo = match c with
+	| CInt64 (i64,k,_) -> {
+		value = big_int_of_string (Int64.to_string i64); 
+		ctype = generatetype (TInt (k,[]))
+	}
+	(** TODO ADD EXTRA constant types**)
+	| _ -> E.s (E.error "Illegal constant %a.\n" d_const c) 
+
+(* generates a list of vvarinfo from a list of Cil varinfo *)
+let generatevariables :varinfo list -> vvarinfo list = List.map generatevariable 
+
+(* generates an operation (adds it to m) from a operation type *)
+let generateoperation (m:vmodule) (ot:voperationtype) = 
+	let ret = {oid = !dataid; operation = ot; ousecount = 0; oschedule=emptyschedule}
+    in dataid:= !dataid + 1;
+    	m.mdataFlowGraph <- ret::m.mdataFlowGraph;
+    	ret;;
+
+(* the default function for getting an operation for a variable *)
+let defaultvariables (m:vmodule) (v:vvarinfo) :voperation = 
+	generateoperation m (Variable (v))
+
+(* generates appropriate operations in m for the expression.
+ * variables are resolved using vars *)
+let rec generatedataflow (vars:vvarinfo -> voperation) (m:vmodule) (e:exp) :voperation = 
+	match e with
+		| Const c -> generateoperation m (Constant (generateconstant c))
+  		| Lval l -> (match l with
+  			| (Var(v),NoOffset) -> vars (generatevariable v)
+  			| _ -> E.s (E.error "Illegal lvalue %a.\n" d_lval l)
+  		)
+  		| UnOp (u,e1,t) -> generateoperation m (
+  			Unary (generateunop u, generatedataflow vars m e1, generatetype t))
+  		| BinOp (b,e1,e2,t) -> generateoperation m (Binary (
+  			generatebinop b, generatedataflow vars m e1, 
+  			generatedataflow vars m e2, generatetype t))
+  		| CastE (t,e1) -> generateoperation m (
+  			Unary (Cast, generatedataflow vars m e1, generatetype t))
+  		| _ -> E.s (E.error "Illegal expression %a.\n" d_exp e)   	
+
+(* generates a result for a given variable *)
+let generateresult (m:vmodule) (o:voperation) (v:vvarinfo) :voperation =
+	let optype = Result (v,o) in generateoperation m optype;;
+
+(* generates operations for a Cil exp *)
+let generateexp (m:vmodule) (e:exp) :voperation = 
+	generatedataflow (defaultvariables m) m e;;
+
+(* generates operations from a list of Cil instr *)
+let rec generateinstrlist (ass:voperation list) (vars:vvarinfo -> voperation) (m:vmodule) (il:instr list) =
+	match il with
+	| h::t -> (match h with
+		| Set (lv,e,l) -> (match lv with
+  			| (Var(v),NoOffset) -> 
+  				let result = generatedataflow vars m e
+  				in let var = generatevariable v
+  				in let as1 = 
+  					if List.exists  
+  						(fun f -> match f.operation with
+  							| Result (i,o) when i.varname = var.varname -> 
+  								f.operation <- Result (i,result); true
+  							| _ -> false
+  						) ass
+  					then ass
+  					else (generateresult m result var) :: ass;
+  				in generateinstrlist as1 (fun v -> if v.varname = var.varname then result else vars v) m t
+  			| _ -> E.s (E.error "Illegal lvalue %a.\n" d_lval lv)
+  		)
+		| Call (_,_,_,l) -> E.s (E.error "At %a illegal instr %a.\n" d_loc l d_instr h) 
+		| Asm (_,_,_,_,_,l) -> E.s (E.error "At %a illegal instr %a.\n" d_loc l d_instr h) 
+	)
+	| [] -> ()
+
+(* generates a module from a Cil stmt *)
+let generatemodule (v:vvarinfo) (s:stmt) :vmodule = 
+	let ret = 
+	{
+		mid = s.sid;
+		minputs = [];
+		moutputs = [];
+		mvars = [];
+		mdataFlowGraph = [];
+	} in begin 
+		(match s.skind with
+			| Instr (il) -> (match s.succs with
+  				| h::[] -> ret.moutputs <- {connectfrom = Some s.sid; connectto = Some h.sid; requires = None} :: []
+  				| _ -> E.s (E.error "Stmt %a has incorrect successors\n" d_stmt s)
+  			); generateinstrlist [] (defaultvariables ret) ret il
+  			| Return (eo,l) -> (match eo with
+  					| None -> ()
+  					| Some e -> ignore (generateresult ret (generateexp ret e) v)
+  				);
+  				(match s.succs with
+  					| [] -> ret.moutputs <- {connectfrom = Some s.sid; connectto = None; requires = None} :: []
+  					| _ -> E.s (E.error "At %a stmt %a has incorrect successors\n" d_loc l d_stmt s)
+  				)
+  			| Goto (_,l) -> (match s.succs with
+  				| h::[] -> ret.moutputs <- {connectfrom = Some s.sid; connectto = Some h.sid; requires = None} :: []
+  				| _ -> E.s (E.error "At %a stmt %a has incorrect successors\n" d_loc l d_stmt s)
+  			)
+  			| Break (l) -> (match s.succs with
+  				| h::[] -> ret.moutputs <- {connectfrom = Some s.sid; connectto = Some h.sid; requires = None} :: []
+  				| _ -> E.s (E.error "At %a stmt %a has incorrect successors\n" d_loc l d_stmt s)
+  			)
+  			| Continue (l) -> (match s.succs with
+  				| h::[] -> ret.moutputs <- {connectfrom = Some s.sid; connectto = Some h.sid; requires = None} :: []
+  				| _ -> E.s (E.error "At %a stmt %a has incorrect successors\n" d_loc l d_stmt s)
+  			)
+  			| If (e,b1,b2,l) -> let result = generateexp ret e
+  				in (match s.succs with
+  				| fb::tb::[] -> ret.moutputs <- 
+  					{connectfrom = Some s.sid; connectto = Some tb.sid; requires = Some (result,true)} ::
+  					{connectfrom = Some s.sid; connectto = Some fb.sid; requires = Some (result,false)} :: []
+  				| _ -> E.s (E.error "At %a stmt %a has incorrect successors\n" d_loc l d_stmt s)
+  				)
+  			| Loop (_,l,_,_) -> (match s.succs with
+  				| h::[] -> ret.moutputs <- {connectfrom = Some s.sid; connectto = Some h.sid; requires = None} :: []
+  				| _ -> E.s (E.error "At %a stmt %a has incorrect successors\n" d_loc l d_stmt s)
+  			)
+  			| Block (_) -> (match s.succs with
+  				| h::[] -> ret.moutputs <- {connectfrom = Some s.sid; connectto = Some h.sid; requires = None} :: []
+  				| _ -> E.s (E.error "Stmt %a has incorrect successors\n" d_stmt s)
+  			)
+  			| _ -> E.s (E.error "Illegal stmt %a.\n" d_stmt s) 
+  		);
+  		ret
+	end
+
+(* removes all stmts with no preds, excluding the first statement *)
+let extractminentry (ss:stmt list) :stmt list = 
+	match ss with 
+		| [] -> E.s (E.error "Empty function body")
+		| h::t -> h::(List.filter (fun s -> (List.length s.preds) <> 0) t)
+
+(* generates a top level module from a function definition *)
+let generatefunmodule (f:fundec) :funmodule = dataid := 0; (* Reset op ids *)
+	(* generate variable for function *)
+	let vardesc = generatedesc f.svar
+	(* basic starting point *)
+	in {
+		vdesc = vardesc;
+		vinputs = generatevariables f.sformals;
+		vlocals = generatevariables f.slocals;
+		vmodules = List.map (generatemodule vardesc) (extractminentry f.sallstmts);
+	}
