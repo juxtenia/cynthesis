@@ -2,6 +2,7 @@
 /camlprim0.obj
 /*.a
 /*.o
+/*.sv
 /test/small2/*.o
 /*.obj
 /*.i
