@@ -1,4 +1,5 @@
 open Big_int
+module E = Errormsg
 
 type vastunop = 
 	| UPLUS
@@ -31,7 +32,7 @@ and vastbinop =
 	| OR
 	| XOR
 	| LSHIFT
-	| RSHIT
+	| RSHIFT
 and vastmodule = {
 	mutable modname: string;
 		(* module name *)
@@ -94,6 +95,11 @@ and vastexpression =
 	| TERNARY of vastexpression * vastexpression * vastexpression (* ternary c ? t : f *)
 	| CONCAT of vastexpression list (* concatenation {a,b,c} *)
 
+let isReg l = match l with
+| REG -> true
+| _ -> false
+
+(** functions for getting a verilog string out of the structure *)
 let rec vastunop_to_verilog u = match u with
 	| UPLUS  -> "+"
 	| UMINUS -> "-"
@@ -125,7 +131,7 @@ and vastbinop_to_verilog b = match b with
 	| OR     -> "|"
 	| XOR    -> "^"
 	| LSHIFT -> "<<"
-	| RSHIT  -> ">>"
+	| RSHIFT  -> ">>"
 and vastmodule_to_verilog m = 
 	"module " ^ m.modname ^ "( input clk, input rst" 
 		^ (String.concat "" (List.map 
@@ -140,10 +146,10 @@ and vastmodule_to_verilog m =
 			(fun a -> (vastassignment_to_verilog a) ^ ";\n    ") m.always))
 		^ "end\n"
 	^ "always_ff @(posedge clock)\n    if(rst)\n         begin\n            "
-			^ (String.concat "    " (List.map 
+			^ (String.concat "    " (Listutil.mapfilter
 				(fun v -> vastvariable_to_reset_assignment v) m.outputs))
 			^ "    "
-			^ (String.concat "    " (List.map 
+			^ (String.concat "    " (Listutil.mapfilter
 				(fun v -> vastvariable_to_reset_assignment v) m.locals))
 		^ "end\n    else\n        begin\n            "
 			^ (String.concat "        " (List.map 
@@ -151,8 +157,10 @@ and vastmodule_to_verilog m =
 		^ "    end\n"
 	^ "endmodule // end of module " ^ m.modname
 and vastvariable_to_reset_assignment v = 
-	v.name ^ " = " ^ (string_of_int v.typ.width) ^ "'d" 
-				^ (string_of_big_int v.resetto) ^ ";\n        "
+	if(isReg v.typ.logictype)
+	then Some (v.name ^ " <= " ^ (string_of_int v.typ.width) ^ "'d" 
+				^ (string_of_big_int v.resetto) ^ ";\n        ")
+	else None
 and vastvariable_to_verilog v = 
 	(vasttype_to_verilog v.typ) ^ v.name
 and vastconstant_to_verilog c = (string_of_int c.cwidth) ^ "'d" ^ (string_of_big_int c.value)
@@ -183,3 +191,15 @@ and vastexpression_to_verilog e = "(" ^ (match e with
 		| CONCAT el -> "{" ^ (String.concat "," (List.map 
 			(fun e -> vastexpression_to_verilog e) el)) ^ "}"
 	) ^ ")"
+
+(** useful helper functions *)
+
+(* gets a variable by name *)
+let getvar (m:vastmodule) (s:string) = 
+	try (List.find (fun v -> v.name = s) m.inputs)
+	with | Not_found -> 
+		try (List.find (fun v -> v.name = s) m.outputs)
+		with | Not_found -> 
+			try (List.find (fun v -> v.name = s) m.locals)
+			with | Not_found -> E.s (E.error "Can't find %s\n" s)
+	

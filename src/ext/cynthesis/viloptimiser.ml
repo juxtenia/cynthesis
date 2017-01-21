@@ -1,4 +1,5 @@
 open Vil
+module E = Errormsg
 
 (* gives the result of running all replacements in reps on the operation op *)
 let replaceone (reps :(voperation*voperation) list) (op: voperation) = 
@@ -32,6 +33,7 @@ let mergemodules (m1:vmodule) (m2:vmodule) =
 			minputs = m1.minputs;
 			moutputs = m2.moutputs;
 			mvars = m1.mvars;
+			mvarexports = m2.mvarexports;
 			mdataFlowGraph = [];
 		}
 	(* remove result tags if one exists in second module *)
@@ -82,7 +84,7 @@ let rec compactmodules (acc:vmodule list) (mods:vmodule list) =
 					then compactmodules ac1 ((mergemodules h m) :: rem)
 					(* skip module *)
 					else compactmodules (h :: acc) t
-				| _ -> E.s (E.error "Incorrect module connections or ids: [%s]" (String.concat ", " (List.map string_of_vmodule it)))
+				| _ -> E.s (E.error "Incorrect module connections or ids: [%s]\n" (String.concat ", " (List.map string_of_vmodule it)))
 			)
 		| _ -> compactmodules (h :: acc) t
 	)
@@ -103,15 +105,19 @@ let generateconnections (m:funmodule) = List.iter
 		else ()
 	) m.vmodules;
 	if not (!count = 1) 
-		then E.s (E.error "%d <> 1 entry points to function %s" !count m.vdesc.varname)
+		then E.s (E.error "%d <> 1 entry points to function %s\n" !count m.vdesc.varname)
 	;;
 
 let rec addvariable (f:funmodule) (m:vmodule) (v:vvarinfo) = 
+	(*E.log "Try to add %s to %d\n" v.varname m.mid;*)
 	if variableinlist v m.mvars
 	then () 
 	else (
 		m.mvars <- v :: m.mvars;
 		List.iter (fun from -> 
+			(if variableinlist v from.mvarexports 
+			then () 
+			else from.mvarexports <- v :: from.mvarexports);
 			if List.exists (fun op -> match op.operation with
 				| Result (v1,_) when v1.varname = v.varname -> true
 				| _ -> false) from.mdataFlowGraph
@@ -155,7 +161,7 @@ let variablecull (f:funmodule) =
 	let entry = getentrypoint f 
 	in List.iter (fun v -> 
 			if variableinlist v f.vlocals
-			then E.s (E.error "Variable \"%s\" is undefined at entry point" v.varname)
+			then E.s (E.error "Variable \"%s\" is undefined at entry point\n" v.varname)
 			else ()
 		) entry.mvars 
 
@@ -163,7 +169,8 @@ let variablecull (f:funmodule) =
 let rec dooperationcounts (cs:vconnection list) (ops:voperation list) = 
 	List.iter incchildren ops;
 	List.iter (fun o -> match o.operation with
-	| Result (_,_) -> incoperationcount o
+	| Result (_,_) 
+	| ReturnValue _ -> incoperationcount o
 	| _ -> ()) ops;
 	List.iter (fun c -> match c.requires with
 		| None -> ()

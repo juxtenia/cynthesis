@@ -105,6 +105,9 @@ let rec generatedataflow (vars:vvarinfo -> voperation) (m:vmodule) (e:exp) :vope
 let generateresult (m:vmodule) (o:voperation) (v:vvarinfo) :voperation =
 	let optype = Result (v,o) in generateoperation m optype;;
 
+let generatereturn (m:vmodule) (o:voperation) :voperation = 
+	let optype = ReturnValue o in generateoperation m optype;;
+
 (* generates operations for a Cil exp *)
 let generateexp (m:vmodule) (e:exp) :voperation = 
 	generatedataflow (defaultvariables m) m e;;
@@ -142,6 +145,7 @@ let generatemodule (v:vvarinfo) (s:stmt) :vmodule =
 		minputs = [];
 		moutputs = [];
 		mvars = [];
+		mvarexports = [];
 		mdataFlowGraph = [];
 	} in begin 
 		(match s.skind with
@@ -151,7 +155,7 @@ let generatemodule (v:vvarinfo) (s:stmt) :vmodule =
   			); generateinstrlist [] (defaultvariables ret) ret il
   			| Return (eo,l) -> (match eo with
   					| None -> ()
-  					| Some e -> ignore (generateresult ret (generateexp ret e) v)
+  					| Some e -> ignore (generatereturn ret (generateexp ret e))
   				);
   				(match s.succs with
   					| [] -> ret.moutputs <- {connectfrom = Some s.sid; connectto = None; requires = None} :: []

@@ -6,7 +6,11 @@ module E = Errormsg
 
 let printflags = ref 48;;
 
-(* turns a cil fundec into a vil funmodule *)
+let writestringtofile (file:string) (value:string) = 
+	let oc = open_out file in    (* create or truncate file, return channel *)
+  	Printf.fprintf oc "%s\n" value;   (* write something *)   
+  	close_out oc
+
 let funtomodule (f:fundec) = 
 	let ret = Ciltovil.generatefunmodule f 
 	in begin
@@ -19,9 +23,11 @@ let funtomodule (f:fundec) =
 		(* print more readable module printout *)
   		if(!printflags land 16 <> 0) then E.log("%s\n") (VI.print_funmodule ret) else ();
 		let vret = Viltovast.vil_to_vast ret
+		in let vstring = VA.vastmodule_to_verilog vret
 		in begin
 			(* print verilog result *)
-  			if(!printflags land 32 <> 0) then E.log("%s\n") (VA.vastmodule_to_verilog vret) else ();
+  			if(!printflags land 32 <> 0) then E.log("%s\n") vstring else ();
+  			writestringtofile ((VI.functionname ret) ^ ".sv") vstring
   		end
 	end
 

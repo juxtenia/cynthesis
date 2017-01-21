@@ -62,6 +62,8 @@ and vmodule = {
 		(** The id of this module in the function *)
 	mutable mvars: vvarinfo list;
 		(** The variables inputed to this module *)
+	mutable mvarexports: vvarinfo list;
+		(** The variables outputed from this module *)
 	mutable minputs: vconnection list;
 		(** The incoming connections *)
 	mutable moutputs: vconnection list;
@@ -94,6 +96,8 @@ and voperationtype =
 	| Result of vvarinfo * voperation
 		(** marks the value of a variable that should be passed to the next 
 			stage *)
+	| ReturnValue of voperation
+		(** marks the value to be returned *)
 	| Unary of unop * voperation * vtype
 		(** applies a unary operation to the previous item *)
 	| Binary of binop * voperation * voperation * vtype
@@ -183,6 +187,7 @@ and string_of_voperationtype vt = "{" ^ (match vt with
 	| Variable v -> "Variable:" ^ (string_of_vvarinfo v)
 	| Constant c -> "Constant:" ^ (string_of_vconstinfo c)
 	| Result (v,o) -> "Result:(" ^ (string_of_vvarinfo v) ^ ", " ^ (string_of_int o.oid) ^ ")"
+	| ReturnValue o -> "ReturnValue:(" ^ (string_of_int o.oid) ^ ")"
 	| Unary (u,o,t) -> "Unary:(" ^ (string_of_unop u) ^ ", " ^ (string_of_int o.oid) ^ ", " 
 		^ (string_of_vtype t) ^ ")" 
 	| Binary (u,o1,o2,t) -> "Binary:(" ^ (string_of_binop u) ^ ", " ^ (string_of_int o1.oid) 
@@ -244,6 +249,7 @@ and print_vconnections (c:vconnection list) = match c with
 and print_vmodule m = 
 	(string_of_int m.mid) ^ " " ^ (print_vconnections m.moutputs) 
 	^ "    ( " ^ (String.concat ", " (List.map (fun v -> v.varname) m.mvars))
+	^ " ) -> ( " ^ (String.concat ", " (List.map (fun v -> v.varname) m.mvarexports))
 	^ " )\n\t\t" ^ (String.concat "\n\t\t" (List.map print_voperation m.mdataFlowGraph))
 and print_voperation o = 
 	(string_of_int o.oid) ^ " ==== " ^ (print_voperationtype o.operation)
@@ -251,6 +257,7 @@ and print_voperationtype vt = match vt with
 	| Variable v -> print_vvarinfo v
 	| Constant c -> print_vconstinfo c
 	| Result (v,o) -> v.varname ^ " = <" ^ (string_of_int o.oid) ^">"
+	| ReturnValue o -> "return <" ^ (string_of_int o.oid) ^ ">"
 	| Unary (u,o,t) -> (print_unop u) ^ "<" ^ (string_of_int o.oid) ^ ">: " 
 		^ (print_vtype t) 
 	| Binary (u,o1,o2,t) -> "<" ^ (string_of_int o1.oid) ^ "> " ^ (print_binop u) ^ " <" ^ 
@@ -336,15 +343,18 @@ let getmodulesucessors (f:funmodule) (m:vmodule) :vmodule list =
 let getmodulepredecessors (f:funmodule) (m:vmodule) :vmodule list = 
 	Listutil.mapfilter (fun c -> modulefromintoption f c.connectfrom) m.minputs
 
+(* is variable v in list l ? (name equality)*)
 let variableinlist (v:vvarinfo) (l:vvarinfo list) = 
 	List.exists (fun v1 -> v1.varname = v.varname) l
 
+(* does m have a result operation for v?*)
 let hasvariableresult (v:vvarinfo) (m:vmodule) = 
 	List.exists (fun op -> match op.operation with
 			| Result (v1,_) when v1.varname = v.varname -> true
 			| _ -> false
 		) m.mdataFlowGraph
 
+(* doesn m have a variable operation for v? *)
 let hasvariableuse (v:vvarinfo) (m:vmodule) = 
 	List.exists (fun op -> match op.operation with
 			| Variable v1 when v1.varname = v.varname -> true
@@ -365,11 +375,33 @@ let dotoimmediatechildren (f:voperation -> unit) (op:voperation) =
 	| Unary(_,o,_) -> f o
 	| Binary(_,o1,o2,_) -> f o1; f o2
 	| Result(_,o) -> f o
+	| ReturnValue o -> f o
 	| _ -> ()
 
-(* simple uses of dotoimmedaitechildren for tracking use counts *)
+(* simple uses of dotoimmediatechildren for tracking use counts *)
 let incchildren = dotoimmediatechildren incoperationcount;;
 let decchildren = dotoimmediatechildren decoperationcount;;
+
+(* get switching points *)
+let getswitches (m:vmodule) = 
+	let foundids = ref []
+	in (Listutil.mapfilter (fun c -> match c.requires with
+		| Some(o,_) when not (List.mem o.oid !foundids) -> 
+			foundids := o.oid :: ! foundids;
+			Some(o)
+		| _ -> None) m.moutputs)
+
+(* get type of an operation *)
+let rec gettype (o:voperation) = match o.operation with
+	| Variable v -> v.vtype
+	| Constant c -> c.ctype
+	| Result (v,_) -> v.vtype
+	| ReturnValue o1 -> gettype o1
+	| Unary (_,_,t) -> t
+	| Binary (_,_,_,t) -> t
+
+(* get the name of a function *)
+let functionname (f:funmodule) = f.vdesc.varname
 
 (* code for filling in the schedule *)
 
