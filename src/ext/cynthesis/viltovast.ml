@@ -151,7 +151,7 @@ let addclocked (r:vastmodule) (v:vastvariable) (e:vastexpression) =
 
 let addalways (r:vastmodule) (v:vastvariable) (e:vastexpression) = 
 	r.always <- { var={ variable=v; range=None; };
-		assign=e; blocking=false; } :: r.always
+		assign=e; blocking=true; } :: r.always
 
 let startinput = "start"
 let startfollow = "startfollow"
@@ -160,7 +160,8 @@ let zeroconst = {value = Big_int.zero_big_int; cwidth=1;}
 
 let getexpfromconnection (r:vastmodule) (c:vconnection) = match c with
 	| {connectfrom=None;} -> 
-		defaultrange (getvar r startinput)
+		BINARY (LAND, defaultrange (getvar r startinput), 
+			UNARY (ULNOT, defaultrange (getvar r startfollow)))
 	| {connectfrom=Some i; requires=None} ->
 		defaultrange (getcontrolvariable r i maincontrol)
 	| {connectfrom=Some i; requires=Some (o,true)} ->
@@ -205,7 +206,8 @@ let returnconnections (r:vastmodule) (f:funmodule) =
 		| {connectfrom=Some i;connectto=None;requires=r} -> Some (i,r)
 		| _ -> None) m.moutputs) f.vmodules)
 	in  addclocked r (getvar r finishoutput) (BINARY(LAND,
-		UNARY(ULNOT,defaultrange (getvar r startinput)),
+		UNARY(ULNOT, BINARY (LAND, defaultrange (getvar r startinput), 
+			UNARY (ULNOT, defaultrange (getvar r startfollow)))),
 		(List.fold_left (fun a (i,re) -> BINARY (LOR,a,
 			match re with
 				| None -> defaultrange (getcontrolvariable r i maincontrol)

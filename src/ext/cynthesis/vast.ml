@@ -138,14 +138,14 @@ and vastmodule_to_verilog m =
 			(fun v -> ", input " ^ (vastvariable_to_verilog v)) m.inputs))
 		^ (String.concat "" (List.map 
 			(fun v -> ", output " ^ (vastvariable_to_verilog v)) m.outputs))
-		^ ")\n" 
+		^ ");\n" 
 	^ (String.concat "" (List.map 
 			(fun v -> (vastvariable_to_verilog v) ^ ";\n") m.locals))
-	^ "always_comb\n    begin\n        "
-		^ (String.concat "    " (List.map 
-			(fun a -> (vastassignment_to_verilog a) ^ ";\n    ") m.always))
-		^ "end\n"
-	^ "always_ff @(posedge clock)\n    if(rst)\n         begin\n            "
+	^ "\n    "
+		^ (String.concat "" (List.map 
+			(fun a -> "assign " ^ (vastassignment_to_verilog a) ^ ";\n    ") m.always))
+
+	^ "\n    always_ff @(posedge clk)\n    if(rst)\n         begin\n            "
 			^ (String.concat "    " (Listutil.mapfilter
 				(fun v -> vastvariable_to_reset_assignment v) m.outputs))
 			^ "    "
@@ -165,8 +165,8 @@ and vastvariable_to_verilog v =
 	(vasttype_to_verilog v.typ) ^ v.name
 and vastconstant_to_verilog c = (string_of_int c.cwidth) ^ "'d" ^ (string_of_big_int c.value)
 and vasttype_to_verilog t = 
-	(if t.isSigned then "signed " else "")
-	^ (vastlogic_to_verilog t.logictype)
+	(vastlogic_to_verilog t.logictype)
+	^ (if t.isSigned then "signed " else "")
 	^ (if (t.width < 2) then "" else "[" ^ (string_of_int (t.width - 1)) ^ ":0] ")
 and vastlogic_to_verilog l = match l with
 	| WIRE -> "wire "
