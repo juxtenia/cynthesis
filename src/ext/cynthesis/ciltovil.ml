@@ -138,7 +138,7 @@ let rec generateinstrlist (ass:voperation list) (vars:vvarinfo -> voperation) (m
 	| [] -> ()
 
 (* generates a module from a Cil stmt *)
-let generatemodule (v:vvarinfo) (s:stmt) :vmodule = 
+let generatemodule (v:vvarinfo) (entryid:int) (s:stmt) :vmodule = 
 	let ret = 
 	{
 		mid = s.sid;
@@ -190,23 +190,32 @@ let generatemodule (v:vvarinfo) (s:stmt) :vmodule =
   			)
   			| _ -> E.s (E.error "Illegal stmt %a.\n" d_stmt s) 
   		);
+  		if(s.sid = entryid) then ret.minputs <- 
+  		{connectfrom=None;connectto=Some entryid;requires=None}::ret.minputs
+  			else ();
   		ret
 	end
 
 (* removes all stmts with no preds, excluding the first statement *)
-let extractminentry (ss:stmt list) :stmt list = 
+let extractminentry (ss:stmt list) :(int *stmt list) = 
 	match ss with 
 		| [] -> E.s (E.error "Empty function body")
-		| h::t -> h::(List.filter (fun s -> (List.length s.preds) <> 0) t)
+		| h::t -> (h.sid, h::(List.filter (fun s -> (List.length s.preds) <> 0) t))
 
 (* generates a top level module from a function definition *)
 let generatefunmodule (f:fundec) :funmodule = dataid := 0; (* Reset op ids *)
 	(* generate variable for function *)
 	let vardesc = generatedesc f.svar
-	(* basic starting point *)
-	in {
+	in let (entryid,filteredstmts) = (extractminentry f.sallstmts)
+	(* basic starting point, this needs optimisation 
+	 * and annotation before it is useful*)
+	in let ret = {
 		vdesc = vardesc;
 		vinputs = generatevariables f.sformals;
 		vlocals = generatevariables f.slocals;
-		vmodules = List.map (generatemodule vardesc) (extractminentry f.sallstmts);
+		vmodules = List.map (generatemodule vardesc entryid) filteredstmts;
 	}
+	in  (* run optimisation pass *)
+		Viloptimiser.optimisefunmodule ret;
+		(* return *)
+		ret

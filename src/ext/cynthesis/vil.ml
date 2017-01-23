@@ -305,23 +305,32 @@ let eq_operation_type (ot1:voperationtype) (ot2:voperationtype) =
 	| _ -> false
 let eq_operation (o1:voperation) (o2:voperation) = 
 	o1.oid = o2.oid && eq_operation_type o1.operation o2.operation
+
+(* gets the children of an operation *)
 let getchildren (o:voperation) = 
 	match o.operation with
 	| Result (_,o1) -> [o1]
+	| ReturnValue o1 -> [o1]
 	| Unary (_,o1,_) -> [o1]
 	| Binary (_,o1,o2,_) -> [o1;o2]
 	| _ -> []
+
+(* checks whether the children are in a given list, or returns default
+ * if o has no children *)
 let childreninlist (default:bool) (o:voperation) (l:voperation list) = 
 	match o.operation with
 	| Result (_,o1) -> List.memq o1 l
+	| ReturnValue o1 -> List.memq o1 l
 	| Unary (_,o1,_) -> List.memq o1 l
 	| Binary (_,o1,o2,_) -> List.memq o1 l && List.memq o2 l
 	| _ -> default
+
+(* gets scheduling offset for o *)
 let operationoffset (o:voperation) = match o.operation with
 	| Unary (Cast,_,_) -> 0 (* cast is instant *)
 	| Unary (_,_,_)  
 	| Binary(_,_,_,_) -> 1 (* other operators take 1 step *)
-	| _ -> 0 (* results, consts and variables are instant *)
+	| _ -> 0 (* results, consts returnvalues and variables are instant *)
 
 (* helper functions for manipulating vil objects *)
 
@@ -402,6 +411,10 @@ let rec gettype (o:voperation) = match o.operation with
 
 (* get the name of a function *)
 let functionname (f:funmodule) = f.vdesc.varname
+
+(* gets the latest scheduled item in a vmodule *)
+let maxtime (m:vmodule) = 
+	List.fold_left (fun a o -> max o.oschedule.set a) 0 m.mdataFlowGraph
 
 (* code for filling in the schedule *)
 

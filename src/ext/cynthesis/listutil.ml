@@ -1,6 +1,7 @@
 (* Takes a function f:a' -> b' option
  * and maps it to the list l:a' list
- * keeping only the Some (b) results
+ * keeping only the Some (_) results
+ * and extracting the items
  *)
 let mapfilter f l =
 	let rec driver acc x = match x with

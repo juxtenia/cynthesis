@@ -1,6 +1,8 @@
 open Vil
 module E = Errormsg
 
+(* subroutines to replace operations, useful later *)
+
 (* gives the result of running all replacements in reps on the operation op *)
 let replaceone (reps :(voperation*voperation) list) (op: voperation) = 
 	try snd (List.find (fun (f,_) -> f.oid = op.oid) reps)
@@ -25,6 +27,19 @@ let replaceoperations (reps :(voperation*voperation) list) (ops :voperation list
 			| _ -> o.operation
 		in o.operation <- op
 	) ops
+(* straightening optimisation *)
+
+(* generate minputs for modules *)
+let generateconnections (m:funmodule) = List.iter 
+	(fun m1 -> List.iter 
+		(fun c ->
+			match modulefromintoption m c.connectto with
+				| Some m2 -> m2.minputs <- (c :: m2.minputs)
+				| None -> ()
+		) m1.moutputs
+	) m.vmodules;
+	m.vmodules <- List.filter
+		(fun m1 -> List.length m1.minputs <> 0) m.vmodules;;
 
 (* merge two modules together *)
 let mergemodules (m1:vmodule) (m2:vmodule) = 
@@ -89,27 +104,13 @@ let rec compactmodules (acc:vmodule list) (mods:vmodule list) =
 		| _ -> compactmodules (h :: acc) t
 	)
 
-(* generate minputs for modules *)
-let generateconnections (m:funmodule) = List.iter 
-	(fun m1 -> List.iter 
-		(fun c ->
-			match modulefromintoption m c.connectto with
-				| Some m2 -> m2.minputs <- (c :: m2.minputs)
-				| None -> ()
-		) m1.moutputs
-	) m.vmodules;
-	let count = ref 0
-	in List.iter (fun m1 -> if List.length m1.minputs = 0 
-		then (count := !count + 1; 
-			m1.minputs <- [{connectfrom = None; connectto = Some m1.mid; requires = None}])
-		else ()
-	) m.vmodules;
-	if not (!count = 1) 
-		then E.s (E.error "%d <> 1 entry points to function %s\n" !count m.vdesc.varname)
-	;;
+(* Live Variable Analysis *)
 
+(* adds a variable to the inputs of a module and the 
+ * outputs of predecessors, then checks predecessors
+ * if they assign the variable stop, otherwise add to them
+ *)
 let rec addvariable (f:funmodule) (m:vmodule) (v:vvarinfo) = 
-	(*E.log "Try to add %s to %d\n" v.varname m.mid;*)
 	if variableinlist v m.mvars
 	then () 
 	else (
@@ -126,6 +127,7 @@ let rec addvariable (f:funmodule) (m:vmodule) (v:vvarinfo) =
 		) (getmodulepredecessors f m)
 	)
 
+(* generate all variables in all modules *)
 let generatedataflow (f:funmodule) = List.iter
 	(fun m -> List.iter 
 		(fun o -> match o.operation with
@@ -133,6 +135,7 @@ let generatedataflow (f:funmodule) = List.iter
 				| _ -> ()
 		) m.mdataFlowGraph) f.vmodules
 
+(* removes assignments to variables that are not used later *)
 let pruneresults (f:funmodule) = List.iter
 	(fun m -> m.mdataFlowGraph <- List.filter
 		(fun o -> match o.operation with
@@ -157,13 +160,16 @@ let variablecull (f:funmodule) =
 			) m.mdataFlowGraph
 		) f.vmodules
 	) f.vlocals;
-	(* do safety check to ensure variables at entry point *)
+	(* do safety check to ensure variables at entry point are
+	 * inputs and not local variables *)
 	let entry = getentrypoint f 
 	in List.iter (fun v -> 
 			if variableinlist v f.vlocals
 			then E.s (E.error "Variable \"%s\" is undefined at entry point\n" v.varname)
 			else ()
 		) entry.mvars 
+
+(* Dead Code elimination and duplicate operation removal *)
 
 (* build operation counts *)
 let rec dooperationcounts (cs:vconnection list) (ops:voperation list) = 
@@ -177,10 +183,6 @@ let rec dooperationcounts (cs:vconnection list) (ops:voperation list) =
 		| Some (o,_) -> incoperationcount o
 	) cs
 
-(* generate operation counts for all modules *)
-let generateoperationcounts (f:funmodule) = 
-	List.iter (fun m -> dooperationcounts m.moutputs m.mdataFlowGraph) f.vmodules
-
 (* remove unreferenced ops, update children, repeat *)
 let rec pruneoperations (os:voperation list) =
 	if List.exists (fun o -> o.ousecount = 0) os
@@ -188,7 +190,8 @@ let rec pruneoperations (os:voperation list) =
 	else os
 
 (* removes duplicate operations *)
-let rec compactoperations (c:vconnection list) (acc:voperation list) (skip:voperation list) (ops:voperation list) = 
+let rec compactoperations (c:vconnection list) (acc:voperation list) 
+		(skip:voperation list) (ops:voperation list) = 
 	match ops with
 	| [] -> (match skip with
 		| [] -> acc
@@ -207,22 +210,37 @@ let rec compactoperations (c:vconnection list) (acc:voperation list) (skip:voper
 		else compactoperations c acc (h::skip) t
 
 (* optimises away unecessary operations *)
-let culloperations (f:funmodule) = List.iter
-	(fun m -> 
+let culloperations (f:funmodule) = 
+	List.iter (fun m -> 
+		dooperationcounts m.moutputs m.mdataFlowGraph) f.vmodules;
+	List.iter (fun m -> 
 		m.mdataFlowGraph <- pruneoperations m.mdataFlowGraph
 	) f.vmodules;
 	List.iter (fun m ->
 		m.mdataFlowGraph <- compactoperations m.moutputs [] [] m.mdataFlowGraph
 	) f.vmodules;;
 
+(* optimising entry point *)
 let optimisefunmodule (f:funmodule) = 
-		(* Generate connections for compacting to use *)
+		(* Generate connections for straightening to use 
+		 * adds all connections in mouputs to the appropriate
+		 * module's minputs
+		 *)
 		generateconnections f;
-		(* Compact modules to basic blocks *)
+		(* Straightening optimisation 
+		 * merge basic blocks with basic control flow
+		 *)
 		f.vmodules <- compactmodules [] f.vmodules;
-		(* Remove unused variables *)
+		(* Live variable analysis
+		 * annotates modules with live variables,
+		 * removes unnecessary Result (_,_) labels and
+		 * removes unused local variables completely 
+		 *)
 		variablecull f;
-		(* Set up usage pointers for operation graphs *)
-		generateoperationcounts f;
-		(* remove unused operations *)
+		(* Dead code elimination and duplicate operation removal 
+		 * removes any operations which are not needed by a 
+		 * result label, control flow condition or return value
+		 * also checks to see if modules contain duplicate operations,
+		 * removing surplus ones.
+		 *)
 		culloperations f;
