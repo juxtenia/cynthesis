@@ -2,10 +2,10 @@
 
 int bitcount(int input);
 
-inline int bitcount (int input){
+inline int bitcount (int in){
 	int output = 0;
-	for(int i = 0;i<8*sizeof(input);i++){
-		if(input & (1 << i)) output++;
+	for(int i = 0;i<8*sizeof(in);i++){
+		if(in & (1 << i)) output++;
 	}
 	return output;
 }
