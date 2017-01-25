@@ -31,6 +31,11 @@ let funtomodule (f:fundec) =
 		if(!printflags land 8 <> 0) then E.log("%s\n") (VI.string_of_funmodule ret) else ();
 		(* print more readable module printout *)
   		if(!printflags land 16 <> 0) then E.log("%s\n") (VI.print_funmodule ret) else ();
+  		(* print optimiser metrics *)
+  		if(!printflags land 64 <> 0) then E.log("Opcost: %d, Timecost: %f\n") 
+  			(Vilevaluator.totaloperationcost ret)
+  			(Vilevaluator.weightedtimecost ret)
+  			 else ();
 	let vret = Viltovast.vil_to_vast ret
 	in let vstring = VA.vastmodule_to_verilog vret
 	in  (* print verilog result *)
@@ -57,22 +62,29 @@ let cynthesise f =
   	) f.globals
     else E.log("There were errors \n")
 
+let padd = "                                   "
+
 let feature = 
   { fd_name = "cynthesis";
     fd_enabled = false;
     fd_extraopt = [("--cynthesis_print_flags",
     	Arg.Set_int printflags,
-    	" print flags for the cynthesis plugin\n" ^
-		"   1 - Print code before cynthesis\n" ^ 
-		"   2 - Print CFG info\n" ^
-		"   4 - Print a detailed CFG list\n" ^ 
-		"   8 - Dump all info about resulting module\n" ^
-		"  16 - Print resulting module\n" ^
-    	"  32 - Print resulting verilog\n");
+    	" Print flags for the cynthesis plugin\n" ^ padd ^
+		"   1 - Print code before cynthesis\n" ^ padd ^
+		"   2 - Print CFG info\n" ^ padd ^
+		"   4 - Print a detailed CFG list\n" ^ padd ^
+		"   8 - Dump all info about resulting module\n" ^ padd ^
+		"  16 - Print resulting module\n" ^ padd ^
+    	"  32 - Print resulting verilog\n" ^ padd ^ 
+    	"  64 - Print what the optimiser is doing");
     	("--cynthesis_output_dir",
     	Arg.Set_string outputdir,
-    	" the output directory for verilog files\n" ^
-    	" filenames will be the name of the cynthesised functions")
+    	" Set the output directory for verilog files. " ^
+    	" Filenames will be the name of the synthesised functions");
+    	("--cynthesis_average_loop_count",
+    	Arg.Set_int VI.averageloopcount,
+    	" Set the number of iterations assumed a loop executes, " ^
+    	" (if analysis can't determine this)")
     ];
     fd_description = "verilog HLS of functions marked with 'inline'";
     fd_doit = cynthesise;

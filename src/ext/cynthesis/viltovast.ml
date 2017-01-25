@@ -4,11 +4,13 @@ module E = Errormsg
 
 let defaultrange (v:vastvariable) = VARIABLE { variable = v; range=None; }
 
-let vil_to_vast_type (l:vastlogic) (t:vtype) :vasttype = {
-	width = t.width;
-	isSigned = t.isSigned;
-	logictype = l;
-}
+let vil_to_vast_type (l:vastlogic) (t:vtype) :vasttype = 
+	let te = gettypeelement t
+	in {
+		width = te.width;
+		isSigned = te.isSigned;
+		logictype = l;
+	}
 
 let vil_to_vast_variable (l:vastlogic) (v:vvarinfo) :vastvariable = {
 	name = v.varname;
@@ -18,7 +20,7 @@ let vil_to_vast_variable (l:vastlogic) (v:vvarinfo) :vastvariable = {
 
 let vil_to_vast_constant (c:vconstinfo) = {
 	value = c.value;
-	cwidth = c.ctype.width;
+	cwidth = (gettypeelement c.ctype).width;
 }
 
 let vil_to_vast_unop (u:unop) (e:vastexpression) = match u with
@@ -259,9 +261,9 @@ let vil_to_vast_connections (r:vastmodule) (m:vmodule) =
 	| _ -> manyconnections r m
 
 let vil_to_vast (f:funmodule):vastmodule = 
-	let startcontrol = vil_to_vast_variable NA {varname=startinput; vtype={width=1; isSigned=false}}
-	in let startfollowcontrol = vil_to_vast_variable REG {varname=startfollow; vtype={width=1; isSigned=false}}
-	in let readycontrol = vil_to_vast_variable REG {varname=finishoutput; vtype={width=1; isSigned=false}}
+	let startcontrol = vil_to_vast_variable NA {varname=startinput; vtype=Basic {width=1; isSigned=false}}
+	in let startfollowcontrol = vil_to_vast_variable REG {varname=startfollow; vtype=Basic {width=1; isSigned=false}}
+	in let readycontrol = vil_to_vast_variable REG {varname=finishoutput; vtype=Basic {width=1; isSigned=false}}
 	in let resultoutput = vil_to_vast_variable REG f.vdesc
 	in let ret = {
 		modname = f.vdesc.varname;

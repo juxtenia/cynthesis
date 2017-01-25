@@ -8,17 +8,49 @@ let dataid = ref 0;;
 (* gives whether a type is signed *)
 let rec typesigned (t:typ) :bool = match t with
 	| TInt(ik,_) -> isSigned ik
+	| TEnum(ei,_) -> isSigned ei.ekind
 	| TNamed(ti,_) -> typesigned ti.ttype
-	| TComp(_,_) -> false
-	| TEnum(_,_) -> false
+	| TVoid _ 
+	| TComp(_,_) 
+		-> false
 	| _ -> E.s (E.error "Illegal type %a.\n" d_type t)
 
-(* generates a vtype from a Cil typ *)
-let generatetype (t:typ) :vtype = 
-	{
+let generatetypeelement (t:typ) :vtypeelement = {
 		width = bitsSizeOf t;
 		isSigned = typesigned t;
 	}
+
+
+
+(* generates a vtype from a Cil typ *)
+let rec generatetype (t:typ) :vtype = 
+	let te = generatetypeelement t
+	in  match t with
+		| TVoid _ 
+		| TInt (_,_)
+		| TEnum (_,_)
+			-> Basic te
+		| TNamed (t1,_) 
+			-> generatetype t1.ttype
+		| TComp (ci,_) -> let cel = 
+				List.map generatecompelement (List.filter (fun f ->
+					missingFieldName <> f.fname ) ci.cfields)
+			in if ci.cstruct then Struct (te,cel) else Union (te,cel)
+		| _ -> E.s (E.error "Illegal type %a.\n" d_type t)
+and generatecompelement (f:fieldinfo) = 
+	let ret = {
+		ename = f.fname;
+		etype = generatetype f.ftype;
+	}
+	in (match f.fbitfield with
+			| None -> ()
+			| Some i -> (match ret.etype with
+				| Basic b -> b.width <- i
+				| _ -> E.s (E.error "Illegal bitfield type %a.\n" d_type f.ftype)
+			)
+		);
+		ret 
+	
 
 (* generates a unop from a Cil unop *)
 let generateunop (u:Cil.unop) :Vil.unop = match u with
@@ -90,7 +122,7 @@ let rec generatedataflow (vars:vvarinfo -> voperation) (m:vmodule) (e:exp) :vope
 		| Const c -> generateoperation m (Constant (generateconstant c))
   		| Lval l -> (match l with
   			| (Var(v),NoOffset) -> vars (generatevariable v)
-  			| _ -> E.s (E.error "Illegal lvalue %a.\n" d_lval l)
+  			| _ -> E.s (E.error "Illegal lvalue %a\n" d_lval l)
   		)
   		| UnOp (u,e1,t) -> generateoperation m (
   			Unary (generateunop u, generatedataflow vars m e1, generatetype t))
@@ -137,6 +169,18 @@ let rec generateinstrlist (ass:voperation list) (vars:vvarinfo -> voperation) (m
 	)
 	| [] -> ()
 
+let oneconnection f t = {connectfrom = Some f; connectto = Some t; 
+  					requires = None; probability = 1.0} :: []
+
+let returnconnection f = {connectfrom = Some f; connectto = None; 
+  					requires = None; probability = 1.0} :: []
+
+let ifconnection f s tt tf p = 
+	{connectfrom = Some f; connectto = Some tt; 
+		requires = Some (s,true); probability=p} ::
+  	{connectfrom = Some f; connectto = Some tf; 
+  		requires = Some (s,false); probability=1.0-.p} :: []
+
 (* generates a module from a Cil stmt *)
 let generatemodule (v:vvarinfo) (entryid:int) (s:stmt) :vmodule = 
 	let ret = 
@@ -150,7 +194,7 @@ let generatemodule (v:vvarinfo) (entryid:int) (s:stmt) :vmodule =
 	} in begin 
 		(match s.skind with
 			| Instr (il) -> (match s.succs with
-  				| h::[] -> ret.moutputs <- {connectfrom = Some s.sid; connectto = Some h.sid; requires = None} :: []
+  				| h::[] -> ret.moutputs <- oneconnection s.sid h.sid
   				| _ -> E.s (E.error "Stmt %a has incorrect successors\n" d_stmt s)
   			); generateinstrlist [] (defaultvariables ret) ret il
   			| Return (eo,l) -> (match eo with
@@ -158,40 +202,38 @@ let generatemodule (v:vvarinfo) (entryid:int) (s:stmt) :vmodule =
   					| Some e -> ignore (generatereturn ret (generateexp ret e))
   				);
   				(match s.succs with
-  					| [] -> ret.moutputs <- {connectfrom = Some s.sid; connectto = None; requires = None} :: []
+  					| [] -> ret.moutputs <- returnconnection s.sid
   					| _ -> E.s (E.error "At %a stmt %a has incorrect successors\n" d_loc l d_stmt s)
   				)
   			| Goto (_,l) -> (match s.succs with
-  				| h::[] -> ret.moutputs <- {connectfrom = Some s.sid; connectto = Some h.sid; requires = None} :: []
+  				| h::[] -> ret.moutputs <- oneconnection s.sid h.sid
   				| _ -> E.s (E.error "At %a stmt %a has incorrect successors\n" d_loc l d_stmt s)
   			)
   			| Break (l) -> (match s.succs with
-  				| h::[] -> ret.moutputs <- {connectfrom = Some s.sid; connectto = Some h.sid; requires = None} :: []
+  				| h::[] -> ret.moutputs <- oneconnection s.sid h.sid
   				| _ -> E.s (E.error "At %a stmt %a has incorrect successors\n" d_loc l d_stmt s)
   			)
   			| Continue (l) -> (match s.succs with
-  				| h::[] -> ret.moutputs <- {connectfrom = Some s.sid; connectto = Some h.sid; requires = None} :: []
+  				| h::[] -> ret.moutputs <- oneconnection s.sid h.sid
   				| _ -> E.s (E.error "At %a stmt %a has incorrect successors\n" d_loc l d_stmt s)
   			)
   			| If (e,b1,b2,l) -> let result = generateexp ret e
   				in (match s.succs with
-  				| fb::tb::[] -> ret.moutputs <- 
-  					{connectfrom = Some s.sid; connectto = Some tb.sid; requires = Some (result,true)} ::
-  					{connectfrom = Some s.sid; connectto = Some fb.sid; requires = Some (result,false)} :: []
+  				| fb::tb::[] -> ret.moutputs <- ifconnection s.sid result tb.sid fb.sid 0.5
   				| _ -> E.s (E.error "At %a stmt %a has incorrect successors\n" d_loc l d_stmt s)
   				)
   			| Loop (_,l,_,_) -> (match s.succs with
-  				| h::[] -> ret.moutputs <- {connectfrom = Some s.sid; connectto = Some h.sid; requires = None} :: []
+  				| h::[] -> ret.moutputs <- oneconnection s.sid h.sid
   				| _ -> E.s (E.error "At %a stmt %a has incorrect successors\n" d_loc l d_stmt s)
   			)
   			| Block (_) -> (match s.succs with
-  				| h::[] -> ret.moutputs <- {connectfrom = Some s.sid; connectto = Some h.sid; requires = None} :: []
+  				| h::[] -> ret.moutputs <- oneconnection s.sid h.sid
   				| _ -> E.s (E.error "Stmt %a has incorrect successors\n" d_stmt s)
   			)
   			| _ -> E.s (E.error "Illegal stmt %a.\n" d_stmt s) 
   		);
   		if(s.sid = entryid) then ret.minputs <- 
-  		{connectfrom=None;connectto=Some entryid;requires=None}::ret.minputs
+  		{connectfrom=None;connectto=Some entryid;requires=None;probability=1.0}::ret.minputs
   			else ();
   		ret
 	end

@@ -1,6 +1,8 @@
 open Big_int
 module E = Errormsg
 
+let averageloopcount = ref 40;;
+
 (** Unary Operations*)
 type unop =
   | Cast                                (** Cast expression*)
@@ -56,6 +58,8 @@ and vconnection = {
 		(** Optional requirement for exporting, The value of the operation 
 			with the given id must have the same c truth value as the bool 
 			provided *)
+	mutable probability: float;
+		(** The likelihood of taking this connection*)
 }
 and vmodule = {
 	mutable mid: int;
@@ -102,11 +106,21 @@ and voperationtype =
 		(** applies a unary operation to the previous item *)
 	| Binary of binop * voperation * voperation * vtype
 		(** applies a binary operation to the previous items *)  
-and vtype = {
+and vtype = 
+	| Basic of vtypeelement
+	| Struct of vtypeelement * vcompelement list
+	| Union of vtypeelement * vcompelement list
+and vtypeelement = {
+	(** The width of the type, in bits *)
 	mutable width: int;
-		(** The width of the type, in bits *)
+	(** Whether this is a signed variable *)
 	mutable isSigned: bool;
-		(** Whether this is a signed variable *)
+}
+and vcompelement = {
+	(** The name of the element *)
+	mutable ename: string;
+	(** The type of the element*)
+	mutable etype: vtype;
 }
 
 let emptyschedule = {earliest = 0; latest = 0; set = 0};;
@@ -139,63 +153,76 @@ and string_of_binop b = match b with
   | BXor -> "BXor"
   | BOr -> "BOr"
 and string_of_funmodule f = 
-	"{ vdesc:" ^ (string_of_vvarinfo f.vdesc)
+	"{ vdesc:" ^ string_of_vvarinfo f.vdesc
 	^ ", vinputs:[" ^ (String.concat ", " (List.map string_of_vvarinfo f.vinputs))
 	^ "], vlocals:[" ^ (String.concat ", " (List.map string_of_vvarinfo f.vlocals))
 	^ "], vmodules:[" ^ (String.concat ", " (List.map string_of_vmodule f.vmodules))
 	^ "]}"
 and string_of_vvarinfo v = 
 	"{ varname:\"" ^ v.varname
-	^ "\", vtype:" ^ (string_of_vtype v.vtype)
+	^ "\", vtype:" ^ string_of_vtype v.vtype
 	^ "}"
 and string_of_vconstinfo c = 
-	"{ value:" ^ (string_of_big_int c.value)
-	^ ", vtype:" ^ (string_of_vtype c.ctype)
+	"{ value:" ^ string_of_big_int c.value
+	^ ", vtype:" ^ string_of_vtype c.ctype
 	^ "}"
 and string_of_vconnection c = 
 	"{ connectfrom:" ^ (match c.connectfrom with 
-		| Some i -> (string_of_int i)
+		| Some i -> string_of_int i
 		| None -> "None"
 	)
 	^ ", connectto:" ^ (match c.connectto with 
-		| Some i -> (string_of_int i)
+		| Some i -> string_of_int i
 		| None -> "None"
 	)
 	^ ", requires:" ^ (match c.requires with 
-		| Some (o,b) -> "Some:(" ^ (string_of_int o.oid) ^ ", " ^ (string_of_bool b) ^ ")"
+		| Some (o,b) -> "Some:(" ^ string_of_int o.oid ^ ", " 
+			^ string_of_bool b ^ ")"
 		| None -> "None"
 	)
+	^ ", probability:" ^ string_of_float c.probability
 	^ "}"
 and string_of_vmodule m = 
-	"{ mid:" ^ (string_of_int m.mid)
+	"{ mid:" ^ string_of_int m.mid
 	^ ", minputs:[" ^ (String.concat ", " (List.map string_of_vconnection m.minputs))
 	^ "], moutputs:[" ^ (String.concat ", " (List.map string_of_vconnection m.moutputs))
 	^ "], mdataFlowGraph:[" ^ (String.concat ", " (List.map string_of_voperation m.mdataFlowGraph))
 	^ "]}"
 and string_of_voperation o = 
-	"{ oid:" ^ (string_of_int o.oid)
-	^ ", ousecount:" ^ (string_of_int o.ousecount) 
-	^ ", oschedule:" ^ (string_of_vscheduleinfo o.oschedule)
-	^ ", operation:" ^ (string_of_voperationtype o.operation)
+	"{ oid:" ^ string_of_int o.oid
+	^ ", ousecount:" ^ string_of_int o.ousecount 
+	^ ", oschedule:" ^ string_of_vscheduleinfo o.oschedule
+	^ ", operation:" ^ string_of_voperationtype o.operation
 	^ "}"
 and string_of_vscheduleinfo si = 
-	"{ earliest:" ^ (string_of_int si.earliest)
-	^ ", latest:" ^ (string_of_int si.latest) 
-	^ ", set:" ^ (string_of_int si.set)
+	"{ earliest:" ^ string_of_int si.earliest
+	^ ", latest:" ^ string_of_int si.latest 
+	^ ", set:" ^ string_of_int si.set
 	^ "}"
 and string_of_voperationtype vt = "{" ^ (match vt with
-	| Variable v -> "Variable:" ^ (string_of_vvarinfo v)
-	| Constant c -> "Constant:" ^ (string_of_vconstinfo c)
-	| Result (v,o) -> "Result:(" ^ (string_of_vvarinfo v) ^ ", " ^ (string_of_int o.oid) ^ ")"
-	| ReturnValue o -> "ReturnValue:(" ^ (string_of_int o.oid) ^ ")"
-	| Unary (u,o,t) -> "Unary:(" ^ (string_of_unop u) ^ ", " ^ (string_of_int o.oid) ^ ", " 
-		^ (string_of_vtype t) ^ ")" 
-	| Binary (u,o1,o2,t) -> "Binary:(" ^ (string_of_binop u) ^ ", " ^ (string_of_int o1.oid) 
-		^ ", " ^ (string_of_int o2.oid) ^ ", " ^ (string_of_vtype t) ^ ")" 
+	| Variable v -> "Variable:" ^ string_of_vvarinfo v
+	| Constant c -> "Constant:" ^ string_of_vconstinfo c
+	| Result (v,o) -> "Result:(" ^ string_of_vvarinfo v ^ ", " ^ string_of_int o.oid ^ ")"
+	| ReturnValue o -> "ReturnValue:(" ^ string_of_int o.oid ^ ")"
+	| Unary (u,o,t) -> "Unary:(" ^ string_of_unop u ^ ", " ^ string_of_int o.oid ^ ", " 
+		^ string_of_vtype t ^ ")" 
+	| Binary (u,o1,o2,t) -> "Binary:(" ^ string_of_binop u ^ ", " ^ string_of_int o1.oid 
+		^ ", " ^ string_of_int o2.oid ^ ", " ^ string_of_vtype t ^ ")" 
 	) ^ "}"
-and string_of_vtype t = 
-	"{ width:" ^ (string_of_int t.width)
-	^ ", isSigned:" ^ (string_of_bool t.isSigned)
+and string_of_vtype t = "{" ^ (match t with
+	| Basic te -> "Basic:" ^ string_of_vtypeelement te
+	| Struct (te,cel) -> "Struct:(" ^ string_of_vtypeelement te ^ ", [" ^
+		(String.concat ", " (List.map string_of_vcompelement cel)) ^ "])"
+	| Union (te,cel) -> "Union:(" ^ string_of_vtypeelement te ^ ", [" ^ 
+		(String.concat ", " (List.map string_of_vcompelement cel)) ^ "])"
+	) ^ "}"
+and string_of_vtypeelement te = 
+	"{ width:" ^ string_of_int te.width
+	^ ", isSigned:" ^ string_of_bool te.isSigned
+	^ "}"
+and string_of_vcompelement ce = 
+	"{ ename:" ^ ce.ename
+	^ ", etype:" ^ string_of_vtype ce.etype
 	^ "}"
 
 (*  The following functions attempt to give a quick readable
@@ -237,14 +264,16 @@ and print_vconnections (c:vconnection list) = match c with
 		| Some i -> (string_of_int i)
 		| None -> "return"
 	)
-	| [{connectfrom=f1;connectto=tt;requires=Some(o1,true)};{connectfrom=f2;connectto=tf;requires=Some(o2,false)}] when f1 = f2 || o1 = o2
-		-> "-> " ^ (string_of_int o1.oid) ^ " ? " ^ (match tt with 
+	| [{connectfrom=f1;connectto=tt;requires=Some(o1,true);probability=pt};
+		{connectfrom=f2;connectto=tf;requires=Some(o2,false);probability=pf}] 
+		when f1 = f2 || o1 = o2
+	-> "-> " ^ string_of_int o1.oid ^ " ? " ^ (match tt with 
 		| Some i -> (string_of_int i)
 		| None -> "return"
 	) ^ " : " ^ (match tf with 
 		| Some i -> (string_of_int i)
 		| None -> "return"
-	)
+	) ^ "\t\t(" ^ string_of_float pt ^ ":" ^ string_of_float pf ^ ")"
 	| _ -> "[" ^ (String.concat ", " (List.map string_of_vconnection c)) ^ "]"
 and print_vmodule m = 
 	(string_of_int m.mid) ^ " " ^ (print_vconnections m.moutputs) 
@@ -253,48 +282,39 @@ and print_vmodule m =
 	^ " )\n\t\t" ^ (String.concat "\n\t\t" (List.map print_voperation m.mdataFlowGraph))
 and print_voperation o = 
 	(string_of_int o.oid) ^ " ==== " ^ (print_voperationtype o.operation)
+	^ "\t\t" ^ (print_vscheduleinfo o.oschedule)
 and print_voperationtype vt = match vt with
 	| Variable v -> print_vvarinfo v
 	| Constant c -> print_vconstinfo c
-	| Result (v,o) -> v.varname ^ " = <" ^ (string_of_int o.oid) ^">"
-	| ReturnValue o -> "return <" ^ (string_of_int o.oid) ^ ">"
-	| Unary (u,o,t) -> (print_unop u) ^ "<" ^ (string_of_int o.oid) ^ ">: " 
+	| Result (v,o) -> v.varname ^ " = <" ^ string_of_int o.oid ^">"
+	| ReturnValue o -> "return <" ^ string_of_int o.oid ^ ">"
+	| Unary (u,o,t) -> (print_unop u) ^ "<" ^ string_of_int o.oid ^ ">: " 
 		^ (print_vtype t) 
-	| Binary (u,o1,o2,t) -> "<" ^ (string_of_int o1.oid) ^ "> " ^ (print_binop u) ^ " <" ^ 
+	| Binary (u,o1,o2,t) -> "<" ^ string_of_int o1.oid ^ "> " ^ (print_binop u) ^ " <" ^ 
 		(string_of_int o2.oid) ^ ">: " ^ (print_vtype t)
-and print_vtype t = 
-	(string_of_int t.width) ^ "'" ^ if t.isSigned then "s" else "u"
+and print_vscheduleinfo si = 
+	"@" ^ string_of_int si.set 
+	^ "(" ^ string_of_int si.earliest 
+	^ "-" ^ string_of_int si.latest ^ ")"
+and print_vtype t = match t with
+	| Basic te -> print_vtypeelement te
+	| Struct (te,cel) -> "{" ^ (String.concat "," (List.map print_vcompelement cel)) ^ "}"
+	| Union (te,cel) -> "{" ^ (String.concat "||" (List.map print_vcompelement cel)) ^ "}"
+and print_vtypeelement te = 
+	(string_of_int te.width) ^ "'" ^ if te.isSigned then "s" else "u"
+and print_vcompelement ce = 
+	ce.ename ^ ":" ^ print_vtype ce.etype
 
 
 
 (* the following functions check for equality between various types
- * there is several pieces of information left out, if it's not deemed
+ * there are several pieces of information left out, if it's not deemed
  * necessary to the equality test *)
-let eq_type (t1:vtype) (t2:vtype) = 
-	t1.width = t2.width && t1.isSigned = t2.isSigned
-let eq_unop (u1:unop) (u2:unop) = match (u1,u2) with
-	| (Neg,Neg) -> true
-	| (BNot,BNot) -> true
-	| (LNot,LNot) -> true
-	| _ -> false
-let eq_binop (b1:binop) (b2:binop) = match (b1,b2) with
-	| (PlusA,PlusA) -> true
-	| (MinusA,MinusA) -> true
-	| (Mult,Mult) -> true
-	| (Div,Div) -> true
-	| (Mod,Mod) -> true
-	| (Shiftlt,Shiftlt) -> true
-	| (Shiftrt,Shiftrt) -> true
-	| (Lt,Lt) -> true
-	| (Gt,Gt) -> true
-	| (Le,Le) -> true
-	| (Ge,Ge) -> true
-	| (Eq,Eq) -> true
-	| (Ne,Ne) -> true
-	| (BAnd,BAnd) -> true
-	| (BXor,BXor) -> true
-	| (BOr,BOr) -> true
-	| _ -> false
+let eq_type (t1:vtype) (t2:vtype) = t1 = t2
+let eq_typeelement (te1:vtypeelement) (te2:vtypeelement) = te1 = te2
+let eq_compelement (ce1:vtypeelement) (ce2:vtypeelement) = ce1 = ce2
+let eq_unop (u1:unop) (u2:unop) = u1 = u2
+let eq_binop (b1:binop) (b2:binop) = b1 = b2
 let eq_operation_type (ot1:voperationtype) (ot2:voperationtype) = 
 	match (ot1,ot2) with
 	| (Variable v1, Variable v2) when v1.varname = v2.varname -> true
@@ -305,6 +325,13 @@ let eq_operation_type (ot1:voperationtype) (ot2:voperationtype) =
 	| _ -> false
 let eq_operation (o1:voperation) (o2:voperation) = 
 	o1.oid = o2.oid && eq_operation_type o1.operation o2.operation
+
+(* gets the typeelement from a type *)
+let gettypeelement (t:vtype) = match t with
+	| Basic te 
+	| Struct (te,_) 
+	| Union (te,_) 
+		-> te
 
 (* gets the children of an operation *)
 let getchildren (o:voperation) = 
@@ -421,7 +448,7 @@ let maxtime (m:vmodule) =
 (* sets the asap schedule for o *)
 let asap (o:voperation) = o.oschedule <- 
 	{
-		earliest = (List.fold_left max 0 (List.map (fun o1 -> o1.oschedule.earliest + (operationoffset o1)) (getchildren o)));
+		earliest = (List.fold_left max 0 (List.map (fun o1 -> o1.oschedule.earliest) (getchildren o))) + (operationoffset o);
 		latest = o.oschedule.latest; 
 		set = o.oschedule.set;
 	}
@@ -433,7 +460,7 @@ let alap (latest:int) (ops:voperation list) (o:voperation) = o.oschedule <-
 		latest = (let users = List.filter (fun o1 -> List.memq o (getchildren o1)) ops 
 			in match users with
 				| [] -> latest
-				| h::t -> (List.fold_left min h.oschedule.latest (List.map (fun o1 -> o1.oschedule.latest - (operationoffset o1)) t))
+				| h::t -> (List.fold_left min h.oschedule.latest (List.map (fun o1 -> o1.oschedule.latest) t)) - (operationoffset o)
 		);
 		set = o.oschedule.set;
 	}
