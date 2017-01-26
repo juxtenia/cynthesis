@@ -1,8 +1,8 @@
 #include <stdio.h>
 
-int bitcount(int input);
+int bitcount(unsigned int input);
 
-inline int bitcount (int in){
+inline int bitcount (unsigned int in){
 	int output = 0;
 	for(int i = 0;i<8*sizeof(in);i++){
 		if(in & (1 << i)) output++;

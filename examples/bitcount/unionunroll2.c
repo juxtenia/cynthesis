@@ -1,8 +1,8 @@
 #include <stdio.h>
 
-int bitcount(int input);
+int bitcount(unsigned int input);
 
-inline int bitcount (int in){
+inline int bitcount (unsigned int in){
 	int lookup[4] = {0,1,1,2};
 	union {
 		int v;
