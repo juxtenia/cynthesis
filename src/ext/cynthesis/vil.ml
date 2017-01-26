@@ -305,8 +305,6 @@ and print_vtypeelement te =
 and print_vcompelement ce = 
 	ce.ename ^ ":" ^ print_vtype ce.etype
 
-
-
 (* the following functions check for equality between various types
  * there are several pieces of information left out, if it's not deemed
  * necessary to the equality test *)
@@ -493,4 +491,3 @@ let generatescheduleinfo (f:funmodule) =
 			0 m.mdataFlowGraph) [] m.mdataFlowGraph;
 		generateschedule m;
 	) f.vmodules
-
