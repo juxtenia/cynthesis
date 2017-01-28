@@ -121,6 +121,24 @@ let makecontrolvariable (l:vastlogic) (r:vastmodule) (m:vmodule) =
 				controlstartvariable.variable.name)
 		) (VARIABLE controlendvariable)
 
+let makecontrolvariablesequence (i:int) (r:vastmodule) (m:vmodule) = 
+	let controlstartvariable = makelvalnorange (getcontrolvariablename m.mid startcontrol) 
+		({width=1; isSigned=false; logictype=REG;})
+	in let controlendvariable = makelvalnorange (getcontrolvariablename m.mid endcontrol) 
+		({width=1; isSigned=false; logictype=WIRE;})
+	in let controlfollowvariable = makelvalnorange (getcontrolvariablename m.mid followcontrol)
+		({width=1; isSigned=false; logictype=REG;})
+	in let driver j p = if i >= j then p else(
+		let controlnextvariable = makelvalnorange (getcontrolvariablename m.mid (string_of_int j)) 
+			({width=1; isSigned=false; logictype=REG;})
+		in addregvar r controlnextvariable false (VARIABLE p);
+		controlnextvariable
+	)
+	in let lastreg = driver 0 controlstartvariable
+	in 	addvar r controlstartvariable;
+		addwirevar r controlendvariable true (VARIABLE lastreg);
+		addregvar r controlfollowvariable false (VARIABLE controlendvariable)
+
 let makeoperationwirevariable (r:vastmodule) (m:vmodule) (o:voperation) = 
 	addwirevar r (makelvalnorange (getoperationvariablename m.mid o) 
 		(vil_to_vast_type WIRE (gettype o))) true (makeexp r m o)
