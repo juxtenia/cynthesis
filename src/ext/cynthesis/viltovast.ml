@@ -62,7 +62,8 @@ let addwirevar (r:vastmodule) (v:vastlval) (b:bool) (e:vastexpression) =
 
 let getinputvariablename (mid:int) (v:vvarinfo) = Printf.sprintf "input_%s_%d" v.varname mid;;
 let getoutputvariablename (mid:int) (v:vvarinfo) = Printf.sprintf "output_%s_%d" v.varname mid;;
-let maincontrol = ""
+let startcontrol = "start"
+let endcontrol = "end"
 let followcontrol = "follow"
 let getcontrolvariablename (mid:int) (s:string) = Printf.sprintf "control_%d_%s" mid s;;
 let getoperationvariablename (mid:int) (o:voperation) = Printf.sprintf "operation_%d_%d" mid o.oid;;
@@ -70,7 +71,9 @@ let getreturnvariablename (mid:int) = Printf.sprintf "return_%d" mid;;
 
 let getinputvariable (r:vastmodule) (mid:int) (v:vvarinfo) = getvar r (getinputvariablename mid v)
 let getoutputvariable (r:vastmodule) (mid:int) (v:vvarinfo) = getvar r (getoutputvariablename mid v)
-let getcontrolvariable (r:vastmodule) (mid:int) (s:string) = getvar r (getcontrolvariablename mid s)
+let getcontrolstartvariable (r:vastmodule) (mid:int) = getvar r (getcontrolvariablename mid startcontrol)
+let getcontrolendvariable (r:vastmodule) (mid:int) = getvar r (getcontrolvariablename mid endcontrol)
+let getcontrolfollowvariable (r:vastmodule) (mid:int) = getvar r (getcontrolvariablename mid followcontrol)
 let getoperationvariable (r:vastmodule) (mid:int) (o:voperation) = getvar r (getoperationvariablename mid o)
 let getreturnvariable (r:vastmodule) (mid:int) = getvar r (getreturnvariablename mid)
 
@@ -103,17 +106,38 @@ let makeoutputwirevariable (r:vastmodule) (m:vmodule) (v:vvarinfo) (o:voperation
 		(vil_to_vast_type WIRE v.vtype)) true (makeexp r m o)
 
 let makecontrolvariable (l:vastlogic) (r:vastmodule) (m:vmodule) = 
-	let controlvariable = makelvalnorange (getcontrolvariablename m.mid maincontrol) 
+	let controlstartvariable = makelvalnorange (getcontrolvariablename m.mid startcontrol) 
 		({width=1; isSigned=false; logictype=l;})
+	in let controlendvariable = makelvalnorange (getcontrolvariablename m.mid endcontrol) 
+		({width=1; isSigned=false; logictype=WIRE;})
 	in let controlfollowvariable = makelvalnorange (getcontrolvariablename m.mid followcontrol)
 		({width=1; isSigned=false; logictype=REG;})
-	in  addvar r controlvariable;
+	in  addvar r controlstartvariable;
+		addwirevar r controlendvariable true (VARIABLE controlstartvariable);
 		addregvar r controlfollowvariable (match l with
 			| WIRE -> true
 			| REG -> false
 			| NA -> E.s (E.error "Variable %s can't have NA logic type" 
-				controlvariable.variable.name)
-		) (VARIABLE controlvariable)
+				controlstartvariable.variable.name)
+		) (VARIABLE controlendvariable)
+
+let makecontrolvariablesequence (i:int) (r:vastmodule) (m:vmodule) = 
+	let controlstartvariable = makelvalnorange (getcontrolvariablename m.mid startcontrol) 
+		({width=1; isSigned=false; logictype=REG;})
+	in let controlendvariable = makelvalnorange (getcontrolvariablename m.mid endcontrol) 
+		({width=1; isSigned=false; logictype=WIRE;})
+	in let controlfollowvariable = makelvalnorange (getcontrolvariablename m.mid followcontrol)
+		({width=1; isSigned=false; logictype=REG;})
+	in let driver j p = if i >= j then p else(
+		let controlnextvariable = makelvalnorange (getcontrolvariablename m.mid (string_of_int j)) 
+			({width=1; isSigned=false; logictype=REG;})
+		in addregvar r controlnextvariable false (VARIABLE p);
+		controlnextvariable
+	)
+	in let lastreg = driver 0 controlstartvariable
+	in 	addvar r controlstartvariable;
+		addwirevar r controlendvariable true (VARIABLE lastreg);
+		addregvar r controlfollowvariable false (VARIABLE controlendvariable)
 
 let makeoperationwirevariable (r:vastmodule) (m:vmodule) (o:voperation) = 
 	addwirevar r (makelvalnorange (getoperationvariablename m.mid o) 
@@ -145,6 +169,22 @@ let zero_time_module (r:vastmodule) (v:vvarinfo) (m:vmodule) =
 			makeoutputwirevariable r m v (
 				{ oid= -1; ousecount=0; oschedule=emptyschedule; operation=Variable v; }
 			)) !outputvars	
+
+let one_clock_module (r:vastmodule) (v:vvarinfo) (m:vmodule) =
+	List.iter (makeinputvariable r m) m.mvars;
+	makecontrolvariable REG r m;
+	List.iter (makeoperationwirevariable r m) (getswitches m);
+	let outputvars = ref m.mvarexports
+	in  List.iter (fun o -> match o.operation with
+			| Result(v,o1) -> 
+				outputvars := List.filter (fun v1 -> v1.varname <> v.varname) !outputvars;
+				makeoutputvariable r m v o1
+			| ReturnValue o1 -> makereturnvariable r v m o1
+			| _ -> ()) m.mdataFlowGraph;
+		List.iter (fun v -> 
+			makeoutputvariable r m v (
+				{ oid= -1; ousecount=0; oschedule=emptyschedule; operation=Variable v; }
+			)) !outputvars
 
 let positive_time_module (r:vastmodule) (v:vvarinfo) (m:vmodule) =
 	List.iter (makeinputvariable r m) m.mvars;
@@ -185,22 +225,22 @@ let getexpfromconnection (r:vastmodule) (c:vconnection) = match c with
 		BINARY (LAND, defaultrange (getvar r startinput), 
 			UNARY (ULNOT, defaultrange (getvar r startfollow)))
 	| {connectfrom=Some i; requires=None} ->
-		defaultrange (getcontrolvariable r i maincontrol)
+		defaultrange (getcontrolendvariable r i)
 	| {connectfrom=Some i; requires=Some (o,true)} ->
 		BINARY (LAND,
-			defaultrange (getcontrolvariable r i maincontrol),
+			defaultrange (getcontrolendvariable r i),
 			defaultrange (getoperationvariable r i o)
 		)
 	| {connectfrom=Some i; requires=Some (o,false)} ->
 		BINARY (LAND,
-			defaultrange (getcontrolvariable r i maincontrol),
+			defaultrange (getcontrolendvariable r i),
 			UNARY(ULNOT,defaultrange (getoperationvariable r i o))
 		)
 
 let oneconnection (r:vastmodule) (m:vmodule) (c:vconnection) = 
 	let addwhere = if iszerotime m then addalways else addclocked
 	in 
-	addwhere r (getcontrolvariable r m.mid maincontrol) 
+	addwhere r (getcontrolstartvariable r m.mid) 
 		(getexpfromconnection r c);
 	List.iter (fun v -> addalways r (getinputvariable r m.mid v) 
 		(match c with
@@ -211,7 +251,7 @@ let oneconnection (r:vastmodule) (m:vmodule) (c:vconnection) =
 let manyconnections (r:vastmodule) (m:vmodule) = 
 	let addwhere = if iszerotime m then addalways else addclocked
 	in 
-	addwhere r (getcontrolvariable r m.mid maincontrol) 
+	addwhere r (getcontrolstartvariable r m.mid) 
 		(List.fold_left (fun a b -> BINARY (LOR,a,getexpfromconnection r b)) 
 			(CONST zeroconst) m.minputs);
 	List.iter (fun v -> addalways r (getinputvariable r m.mid v) 
@@ -221,7 +261,7 @@ let manyconnections (r:vastmodule) (m:vmodule) =
 					defaultrange (getvar r startinput),
 					defaultrange (getvar r v.varname))
 				| {connectfrom=Some i} -> (
-					defaultrange (getcontrolvariable r i followcontrol),
+					defaultrange (getcontrolfollowvariable r i),
 					defaultrange (getoutputvariable r i v))
 			in TERNARY (ifex,trueex,a)
 		) (CONST zeroconst) m.minputs)) m.mvars
@@ -236,9 +276,9 @@ let returnconnections (r:vastmodule) (f:funmodule) =
 			UNARY (ULNOT, defaultrange (getvar r startfollow)))),
 		(List.fold_left (fun a (i,re) -> BINARY (LOR,a,
 			match re with
-				| None -> defaultrange (getcontrolvariable r i maincontrol)
+				| None -> defaultrange (getcontrolendvariable r i)
 				| Some (o,true) -> BINARY (LAND,
-					defaultrange (getcontrolvariable r i maincontrol),
+					defaultrange (getcontrolendvariable r i),
 					defaultrange (getoperationvariable r i o)
 				)
 				| Some (o,false) -> BINARY (LAND,
@@ -249,7 +289,7 @@ let returnconnections (r:vastmodule) (f:funmodule) =
 		addclocked r (getvar r f.vdesc.varname) 
 		(List.fold_left (fun a (i,_) -> 
 			TERNARY (
-				defaultrange (getcontrolvariable r i followcontrol),
+				defaultrange (getcontrolfollowvariable r i),
 				defaultrange (getreturnvariable r i),
 				a
 			)) (defaultrange (getvar r f.vdesc.varname)) returnpoints)
