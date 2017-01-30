@@ -17,8 +17,8 @@ module tb_bitcount
     logic finished;
     logic finishfollow;
 
-    logic [31:0] testinputs [7:0];
-    logic [31:0] testoutputs [7:0];
+    logic [31:0] testinputs [8:0];
+    logic [31:0] testoutputs [8:0];
 
     bitcount dut (
 		.clk(clk),
@@ -52,6 +52,9 @@ module tb_bitcount
 		testoutputs[6] = 16;
 		testinputs[7] = 32'b11111111_11111111_11111111_11111111;
 		testoutputs[7] = 32;	
+		testinputs[8] = 32'b00000000_11111111_00000000_11111111;
+                testoutputs[8] = 16;
+
 
 		clk = 1;
 		rst = 1;

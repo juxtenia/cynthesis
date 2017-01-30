@@ -397,4 +397,6 @@
 #/tests/
 /tests/*/transcript
 /tests/*/work/*
-/test/bitcount/bitcount.sv
+/tests/*/*.wlf
+/tests/*/*.vstf
+/tests/bitcount/bitcount.sv
