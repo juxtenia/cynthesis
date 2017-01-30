@@ -394,5 +394,7 @@
 /test/small2/merge-ar
 /test/small2/libmerge.a
 
+#/tests/
 /tests/*/transcript
 /tests/*/work/*
+/test/bitcount/bitcount.sv
