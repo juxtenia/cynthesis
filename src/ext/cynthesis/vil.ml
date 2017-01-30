@@ -458,7 +458,7 @@ let alap (latest:int) (ops:voperation list) (o:voperation) = o.oschedule <-
 		latest = (let users = List.filter (fun o1 -> List.memq o (getchildren o1)) ops 
 			in match users with
 				| [] -> latest
-				| h::t -> (List.fold_left min h.oschedule.latest (List.map (fun o1 -> o1.oschedule.latest) t)) - (operationoffset o)
+				| h::t -> (List.fold_left min (h.oschedule.latest - (operationoffset h)) (List.map (fun o1 -> o1.oschedule.latest - (operationoffset o1)) t)) 
 		);
 		set = o.oschedule.set;
 	}
