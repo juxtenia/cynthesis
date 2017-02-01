@@ -1,32 +1,6 @@
 open Vil
 module E = Errormsg
 
-(* subroutines to replace operations, useful later *)
-
-(* gives the result of running all replacements in reps on the operation op *)
-let replaceone (reps :(voperation*voperation) list) (op: voperation) = 
-	try snd (List.find (fun (f,_) -> f.oid = op.oid) reps)
-	with | Not_found -> op
-
-(* replace the targeted operations in condition requirements *)
-let replaceconditions (reps :(voperation*voperation) list) (cs:vconnection list) = List.iter
-	(fun c -> let req = 
-		match c.requires with
-			| None -> None
-			| Some (o,b) -> Some (replaceone reps o,b)
-		in c.requires <- req
-	) cs
-
-(* replace operations in the sub trees of operations in the list *)
-let replaceoperations (reps :(voperation*voperation) list) (ops :voperation list) = List.iter 
-	(fun o -> let op = 
-		match o.operation with
-			| Result (v,o1) -> Result(v,replaceone reps o1)
-			| Unary (u,o1,t) -> Unary(u,replaceone reps o1,t)
-			| Binary (b,o1,o2,t) -> Binary(b,replaceone reps o1, replaceone reps o2,t)
-			| _ -> o.operation
-		in o.operation <- op
-	) ops
 (* straightening optimisation *)
 
 (* generate minputs for modules *)
@@ -39,7 +13,7 @@ let generateconnections (m:funmodule) = List.iter
 		) m1.moutputs
 	) m.vmodules;
 	m.vmodules <- List.filter
-		(fun m1 -> List.length m1.minputs <> 0) m.vmodules;;
+		(fun m1 -> List.length m1.minputs <> 0) m.vmodules
 
 (* merge two modules together *)
 let mergemodules (m1:vmodule) (m2:vmodule) = 
@@ -49,37 +23,11 @@ let mergemodules (m1:vmodule) (m2:vmodule) =
 			moutputs = m2.moutputs;
 			mvars = m1.mvars;
 			mvarexports = m2.mvarexports;
-			mdataFlowGraph = [];
+			mdataFlowGraph = mergeoperations m1.mdataFlowGraph m2.mdataFlowGraph m2.moutputs;
 		}
 	(* remove result tags if one exists in second module *)
-	in let first_half = List.filter 
-		(fun o -> match o.operation with
-			| Result(i,_) when hasvariableresult i m2 -> false
-			| _ -> true
-		) m1.mdataFlowGraph
-	(* things to replace, variable references and what they 
-	 * were set to in the first module *)
-	in let replacements = ref []
-	(* remove variable accesses that were set in first module and add replacements *)
-	in let second_half = List.filter
-		(fun o -> match o.operation with
-			| Variable i when List.exists 
-				(fun o1 -> match o1.operation with
-					| Result(i1,o2) when i1.varname = i.varname -> 
-						replacements := (o,o2) :: !replacements;
-						true
-					| _ -> false
-				) m1.mdataFlowGraph -> false
-			| _ -> true
-		) m2.mdataFlowGraph
-	in  (* do replacements *)
-		replaceoperations !replacements second_half;
-		(* join the two together (rev_append is tail recursive) *)
-		ret.mdataFlowGraph <- List.rev_append first_half second_half;
-		(* update the id's of the connections *)
+	in 	(* update the id's of the connections *)
 		List.iter (fun c -> c.connectfrom <- Some ret.mid) ret.moutputs;
-		(* do the same replacements on the condiditons *)
-		replaceconditions !replacements ret.moutputs;
 		(* return *)
 		ret;; 
 
@@ -120,7 +68,7 @@ let rec addvariable (f:funmodule) (m:vmodule) (v:vvarinfo) =
 			then () 
 			else from.mvarexports <- v :: from.mvarexports);
 			if List.exists (fun op -> match op.operation with
-				| Result (v1,_) when v1.varname = v.varname -> true
+				| Result (v1,_,_,_) when v1.varname = v.varname -> true
 				| _ -> false) from.mdataFlowGraph
 			then ()
 			else addvariable f from v 
@@ -139,7 +87,7 @@ let generatedataflow (f:funmodule) = List.iter
 let pruneresults (f:funmodule) = List.iter
 	(fun m -> m.mdataFlowGraph <- List.filter
 		(fun o -> match o.operation with
-			| Result (v,_) when not (List.exists 
+			| Result (v,_,_,_) when not (List.exists 
 				(fun s -> variableinlist v s.mvars) (getmodulesucessors f m)) -> false
 			| _ -> true
 		) m.mdataFlowGraph) f.vmodules
@@ -175,12 +123,12 @@ let variablecull (f:funmodule) =
 let rec dooperationcounts (cs:vconnection list) (ops:voperation list) = 
 	List.iter incchildren ops;
 	List.iter (fun o -> match o.operation with
-	| Result (_,_) 
+	| Result (_,_,_,_) 
 	| ReturnValue _ -> incoperationcount o
 	| _ -> ()) ops;
 	List.iter (fun c -> match c.requires with
 		| None -> ()
-		| Some (o,_) -> incoperationcount o
+		| Some (o,_) -> List.iter incoperationcount (getlinkchildren o)
 	) cs
 
 (* remove unreferenced ops, update children, repeat *)
@@ -201,7 +149,7 @@ let rec compactoperations (c:vconnection list) (acc:voperation list)
 		then
 			let (eqs,neqs) = 
 				List.partition (fun o -> eq_operation_type h.operation o.operation) t
-			in let replacements = List.map (fun o -> (o,h)) eqs
+			in let replacements = List.map (fun o -> (o,Simple h)) eqs
 			in  replaceoperations replacements acc;
 				replaceoperations replacements neqs;
 				replaceoperations replacements skip;

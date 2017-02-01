@@ -20,7 +20,18 @@ let generatetypeelement (t:typ) :vtypeelement = {
 		isSigned = typesigned t;
 	}
 
+let formstruct (te:vtypeelement) (cel:vcompelement list) = 
+	te.width <- List.fold_left (fun i ce ->
+		ce.ebase <- i; 
+		i + (gettypeelement ce.etype).width
+	) 0 cel;
+	Struct (te,cel)
 
+let formunion (te:vtypeelement) (cel:vcompelement list) = 
+	te.width <- List.fold_left (fun i ce ->
+		max i (gettypeelement ce.etype).width
+	) 0 cel;
+	Union (te,cel)
 
 (* generates a vtype from a Cil typ *)
 let rec generatetype (t:typ) :vtype = 
@@ -35,12 +46,13 @@ let rec generatetype (t:typ) :vtype =
 		| TComp (ci,_) -> let cel = 
 				List.map generatecompelement (List.filter (fun f ->
 					missingFieldName <> f.fname ) ci.cfields)
-			in if ci.cstruct then Struct (te,cel) else Union (te,cel)
+			in if ci.cstruct then formstruct te cel else formunion te cel
 		| _ -> E.s (E.error "Illegal type %a.\n" d_type t)
 and generatecompelement (f:fieldinfo) = 
 	let ret = {
 		ename = f.fname;
 		etype = generatetype f.ftype;
+		ebase = 0;
 	}
 	in (match f.fbitfield with
 			| None -> ()
@@ -50,7 +62,6 @@ and generatecompelement (f:fieldinfo) =
 			)
 		);
 		ret 
-	
 
 (* generates a unop from a Cil unop *)
 let generateunop (u:Cil.unop) :Vil.unop = match u with
@@ -82,7 +93,7 @@ let generatebinop (b:Cil.binop) :Vil.binop = match b with
 let generatedesc (d:varinfo) :vvarinfo =
 	match d.vtype with
 	| TFun(t,Some a, false, _) -> 
-		{ varname = d.vname; vtype = (generatetype t) }
+		{ varname = d.vname; vtype = (generatetype t); }
 	| _ -> E.s (E.error "Illegal type %a.\n" d_type d.vtype) 
 
 (* generates a vvarinfo from a Cil varinfo *)
@@ -93,77 +104,93 @@ let generatevariable (v:varinfo) :vvarinfo =
 	}
 
 (* generates a vconstinfo from a Cil constant *)
-let generateconstant (c:constant) :vconstinfo = match c with
+let rec generateconstant (c:constant) :vconstinfo = match c with
 	| CInt64 (i64,k,_) -> {
 		value = big_int_of_string (Int64.to_string i64); 
-		ctype = generatetype (TInt (k,[]))
+		ctype = generatetype (TInt (k,[]));
 	}
+	| CChr (c) -> generateconstant (charConstToInt c)
 	(** TODO ADD EXTRA constant types**)
 	| _ -> E.s (E.error "Illegal constant %a.\n" d_const c) 
 
 (* generates a list of vvarinfo from a list of Cil varinfo *)
 let generatevariables :varinfo list -> vvarinfo list = List.map generatevariable 
 
-(* generates an operation (adds it to m) from a operation type *)
-let generateoperation (m:vmodule) (ot:voperationtype) = 
-	let ret = {oid = !dataid; operation = ot; ousecount = 0; oschedule=emptyschedule}
-    in dataid:= !dataid + 1;
-    	m.mdataFlowGraph <- ret::m.mdataFlowGraph;
-    	ret;;
+let makeoperation (ot:voperationtype) = 
+	let id = !dataid 
+	in 	dataid:= !dataid + 1;
+		{oid = id; operation = ot; ousecount = 0; oschedule=emptyschedule}
 
-(* the default function for getting an operation for a variable *)
-let defaultvariables (m:vmodule) (v:vvarinfo) :voperation = 
-	generateoperation m (Variable (v))
+let getvarrange (v:varinfo) (o:offset) (lv:lval) = 
+	let rec driver b t o1 = match o1 with
+		| NoOffset -> (b,(gettypeelement t).width)
+		| Field (fi,o2) -> (match t with
+			| Union (_,cel) 
+			| Struct (_,cel) -> let ce = List.find (fun (ce1:vcompelement) -> ce1.ename = fi.fname) cel
+				in driver (b+ce.ebase) ce.etype o2
+			| Basic _ -> E.s (E.error "Type %s has no field %s" (string_of_vtype t) fi.fname))
+		| _ -> E.s (E.error "Illegal lvalue %a\n" d_lval lv)
+	in driver 0 (generatetype v.vtype) o
 
 (* generates appropriate operations in m for the expression.
  * variables are resolved using vars *)
-let rec generatedataflow (vars:vvarinfo -> voperation) (m:vmodule) (e:exp) :voperation = 
+let rec makedataflow (e:exp) :(voperation list * voperationlink) = 
+	let (acn,ret) = 
 	match e with
-		| Const c -> generateoperation m (Constant (generateconstant c))
+		| Const c -> ([], Simple (makeoperation (Constant (generateconstant c))))
   		| Lval l -> (match l with
-  			| (Var(v),NoOffset) -> vars (generatevariable v)
+  			| (Var(v),NoOffset) -> ([], Simple (makeoperation (Variable (generatevariable v))))
+  			| (Var(v),o) -> let (b,w) = getvarrange v o l
+  				in ([], Compound [{
+  					loperation=(makeoperation (Variable (generatevariable v)));
+  					lbase=b;
+  					lwidth=w; }])
   			| _ -> E.s (E.error "Illegal lvalue %a\n" d_lval l)
   		)
-  		| UnOp (u,e1,t) -> generateoperation m (
-  			Unary (generateunop u, generatedataflow vars m e1, generatetype t))
-  		| BinOp (b,e1,e2,t) -> generateoperation m (Binary (
-  			generatebinop b, generatedataflow vars m e1, 
-  			generatedataflow vars m e2, generatetype t))
-  		| CastE (t,e1) -> generateoperation m (
-  			Unary (Cast, generatedataflow vars m e1, generatetype t))
-  		| _ -> E.s (E.error "Illegal expression %a.\n" d_exp e)   	
+  		| UnOp (u,e1,t) -> let (ac1,r1) = makedataflow e1
+  			in (ac1, Simple(makeoperation (Unary (generateunop u, r1, generatetype t))))
+  		| BinOp (b,e1,e2,t) -> let (ac1,r1) = makedataflow e1
+  			in let (ac2,r2) = makedataflow e2
+  			in (List.rev_append ac1 ac2, Simple(makeoperation (Binary (generatebinop b, r1, r2, generatetype t))))
+  		| CastE (t,e1) -> let (ac1,r1) = makedataflow e1
+  			in (ac1,Simple (makeoperation (Unary (Cast, r1, generatetype t))))
+  		| _ -> E.s (E.error "Illegal expression %a.\n" d_exp e)   
+  	in 	(List.rev_append (getlinkchildren ret) acn,ret)
 
-(* generates a result for a given variable *)
-let generateresult (m:vmodule) (o:voperation) (v:vvarinfo) :voperation =
-	let optype = Result (v,o) in generateoperation m optype;;
+let makereturn (e:exp) :voperation list = 
+	let (ops,ln) = makedataflow e
+	in (makeoperation (ReturnValue ln)) :: ops
 
-let generatereturn (m:vmodule) (o:voperation) :voperation = 
-	let optype = ReturnValue o in generateoperation m optype;;
+let overwritevariable (v:vvarinfo) (b:int) (w:int) (ol:voperationlink) =
+	let op = makeoperation (Variable v)
+	in let initial = if b = 0 then [] 
+		else [{lbase=0;lwidth=b;loperation=op;}]
+	in let terminal = if b + w = (gettypeelement v.vtype).width then [] 
+		else [{lbase=b+w;lwidth=(gettypeelement v.vtype).width-(b+w);loperation=op}]
+	in let middle = match ol with
+		| Simple o -> [{lbase=0;lwidth=w;loperation=o;}]
+		| Compound cll -> getrange 0 w cll
+	in Compound (initial @ middle @ terminal)
 
-(* generates operations for a Cil exp *)
-let generateexp (m:vmodule) (e:exp) :voperation = 
-	generatedataflow (defaultvariables m) m e;;
+let generateset (lv:lval) (e:exp) :voperation list =
+	let (ops,reslink) = makedataflow e 
+	in let resulttype = match lv with
+		| (Var(v),NoOffset) -> let v1 = generatevariable v
+			in Result (v1,0,(gettypeelement v1.vtype).width,reslink)
+		| (Var(v),o) -> let v1 = generatevariable v
+			in let (b,w) = getvarrange v o lv
+			in Result (v1,0,(gettypeelement v1.vtype).width, overwritevariable v1 b w reslink)
+		| _ -> E.s (E.error "Illegal lvalue %a.\n" d_lval lv)
+	in let result = makeoperation resulttype
+	in result :: ops
 
 (* generates operations from a list of Cil instr *)
-let rec generateinstrlist (ass:voperation list) (vars:vvarinfo -> voperation) (m:vmodule) (il:instr list) =
+let rec makeinstrlist (m:vmodule) (il:instr list) =
 	match il with
-	| h::t -> (match h with
-		| Set (lv,e,l) -> (match lv with
-  			| (Var(v),NoOffset) -> 
-  				let result = generatedataflow vars m e
-  				in let var = generatevariable v
-  				in let as1 = 
-  					if List.exists  
-  						(fun f -> match f.operation with
-  							| Result (i,o) when i.varname = var.varname -> 
-  								f.operation <- Result (i,result); true
-  							| _ -> false
-  						) ass
-  					then ass
-  					else (generateresult m result var) :: ass;
-  				in generateinstrlist as1 (fun v -> if v.varname = var.varname then result else vars v) m t
-  			| _ -> E.s (E.error "Illegal lvalue %a.\n" d_lval lv)
-  		)
+	| h :: t -> (match h with
+		| Set (lv,e,l) -> 
+			m.mdataFlowGraph <- mergeoperations m.mdataFlowGraph (generateset lv e) m.moutputs;
+			makeinstrlist m t
 		| Call (_,_,_,l) -> E.s (E.error "At %a illegal instr %a.\n" d_loc l d_instr h) 
 		| Asm (_,_,_,_,_,l) -> E.s (E.error "At %a illegal instr %a.\n" d_loc l d_instr h) 
 	)
@@ -196,10 +223,10 @@ let generatemodule (v:vvarinfo) (entryid:int) (s:stmt) :vmodule =
 			| Instr (il) -> (match s.succs with
   				| h::[] -> ret.moutputs <- oneconnection s.sid h.sid
   				| _ -> E.s (E.error "Stmt %a has incorrect successors\n" d_stmt s)
-  			); generateinstrlist [] (defaultvariables ret) ret il
+  			); makeinstrlist ret il
   			| Return (eo,l) -> (match eo with
   					| None -> ()
-  					| Some e -> ignore (generatereturn ret (generateexp ret e))
+  					| Some e -> ret.mdataFlowGraph <- makereturn e
   				);
   				(match s.succs with
   					| [] -> ret.moutputs <- returnconnection s.sid
@@ -217,11 +244,12 @@ let generatemodule (v:vvarinfo) (entryid:int) (s:stmt) :vmodule =
   				| h::[] -> ret.moutputs <- oneconnection s.sid h.sid
   				| _ -> E.s (E.error "At %a stmt %a has incorrect successors\n" d_loc l d_stmt s)
   			)
-  			| If (e,b1,b2,l) -> let result = generateexp ret e
-  				in (match s.succs with
-  				| fb::tb::[] -> ret.moutputs <- ifconnection s.sid result tb.sid fb.sid 0.5
-  				| _ -> E.s (E.error "At %a stmt %a has incorrect successors\n" d_loc l d_stmt s)
-  				)
+  			| If (e,b1,b2,l) -> let (ops,result) = makedataflow e
+  				in  ret.mdataFlowGraph <- ops;
+  					(match s.succs with
+  						| fb::tb::[] -> ret.moutputs <- ifconnection s.sid result tb.sid fb.sid 0.5
+  						| _ -> E.s (E.error "At %a stmt %a has incorrect successors\n" d_loc l d_stmt s)
+  					)
   			| Loop (_,l,_,_) -> (match s.succs with
   				| h::[] -> ret.moutputs <- oneconnection s.sid h.sid
   				| _ -> E.s (E.error "At %a stmt %a has incorrect successors\n" d_loc l d_stmt s)

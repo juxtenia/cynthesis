@@ -4,13 +4,10 @@ module E = Errormsg
 
 let defaultrange (v:vastvariable) = VARIABLE { variable = v; range=None; }
 
-let vil_to_vast_type (l:vastlogic) (t:vtype) :vasttype = 
-	let te = gettypeelement t
-	in {
-		width = te.width;
-		isSigned = te.isSigned;
-		logictype = l;
-	}
+let vil_to_vast_type (l:vastlogic) (t:vtype) :vasttype = match t with
+	| Basic te -> { width = te.width; isSigned = te.isSigned; logictype = l; }
+	| Struct (te,cel) -> { width = te.width; isSigned = te.isSigned; logictype = l; }
+	| Union (te,cel) -> { width = te.width; isSigned = te.isSigned; logictype = l; }
 
 let vil_to_vast_variable (l:vastlogic) (v:vvarinfo) :vastvariable = {
 	name = v.varname;
@@ -95,14 +92,7 @@ let makeinputvariable (r:vastmodule) (m:vmodule) (v:vvarinfo) =
 		addregvar r (makelvalnorange (getinputfollowvariablename m.mid v) 
 			(vil_to_vast_type REG v.vtype)) false (VARIABLE inputvariable)
 
-let rec makeexp (r:vastmodule) (m:vmodule) (o:voperation) = match o.operation with
-	| Variable v -> defaultrange (getinputvariable r m.mid v)
-	| Constant c -> CONST (vil_to_vast_constant c)
-	| Unary (u,o1,_) -> vil_to_vast_unop u (makeexp r m o1)
-	| Binary (b,o1,o2,_) -> vil_to_vast_binop b (makeexp r m o1) (makeexp r m o2)
-	| _ -> E.s (E.error "Unexpected operation %s\n" (string_of_voperation o))
-
-let makeoutputvariable (r:vastmodule) (m:vmodule) (v:vvarinfo) (o:vastexpression) = 
+let makeoutputregvariable (r:vastmodule) (m:vmodule) (v:vvarinfo) (o:vastexpression) = 
 	addregvar r (makelvalnorange (getoutputvariablename m.mid v)
 		(vil_to_vast_type REG v.vtype)) false o
 
@@ -144,15 +134,15 @@ let makecontrolvariablesequence (i:int) (r:vastmodule) (m:vmodule) =
 		addwirevar r controlendvariable true (VARIABLE lastreg);
 		addregvar r controlfollowvariable false (VARIABLE controlendvariable)
 
-let makeoperationwirevariable (r:vastmodule) (m:vmodule) (o:voperation) (ov:vastexpression)= 
+let makeoperationwirevariable (r:vastmodule) (v:vvarinfo) (m:vmodule) (o:voperation) (ov:vastexpression)= 
 	addwirevar r (makelvalnorange (getoperationvariablename m.mid o) 
-		(vil_to_vast_type WIRE (gettype o))) true ov
+		(vil_to_vast_type WIRE (gettype v o))) true ov
 
-let makeoperationregvariable (r:vastmodule) (m:vmodule) (o:voperation) (ov:vastexpression) = 
+let makeoperationregvariable (r:vastmodule) (v:vvarinfo) (m:vmodule) (o:voperation) (ov:vastexpression) = 
 	addregvar r (makelvalnorange (getoperationvariablename m.mid o) 
-		(vil_to_vast_type REG (gettype o))) false ov
+		(vil_to_vast_type REG (gettype v o))) false ov
 
-let makereturnvariable (r:vastmodule) (v:vvarinfo) (m:vmodule) (o:vastexpression) =
+let makereturnregvariable (r:vastmodule) (v:vvarinfo) (m:vmodule) (o:vastexpression) =
 	addregvar r (makelvalnorange (getreturnvariablename m.mid) 
 		(vil_to_vast_type REG v.vtype)) false o
 
@@ -160,93 +150,91 @@ let makereturnwirevariable (r:vastmodule) (v:vvarinfo) (m:vmodule) (o:vastexpres
 	addwirevar r (makelvalnorange (getreturnvariablename m.mid) 
 		(vil_to_vast_type WIRE v.vtype)) true o
 
+let refertocomplink (r:vastmodule) (mid:int) (cl:vcomplink) = 
+	VARIABLE {variable=getoperationvariable r mid cl.loperation; range=Some(cl.lbase,cl.lbase+cl.lwidth-1)}
+
+let refertooperation (r:vastmodule) (mid:int) (ol:voperationlink) = match ol with
+	| Simple o -> defaultrange (getoperationvariable r mid o)
+	| Compound cel-> CONCAT (List.map (refertocomplink r mid) cel)
+
+let makeoperation (r:vastmodule) (v:vvarinfo) (m:vmodule) (o:voperation) = match o.operation with
+	| ReturnValue o1 -> makereturnwirevariable r v m (refertooperation r m.mid o1)
+	| Result(var,_,_,o1) -> makeoutputwirevariable r m var (refertooperation r m.mid o1)
+	| Variable v -> makeoperationwirevariable r v m o (defaultrange (getinputvariable r m.mid v))
+	| Constant c-> makeoperationwirevariable r v m o (CONST (vil_to_vast_constant c))
+	| Unary (Cast,o1,t) -> makeoperationwirevariable r v m o (vil_to_vast_unop Cast
+		(refertooperation r m.mid o1))
+	| Unary (u,o1,t) -> makeoperationregvariable r v m o (vil_to_vast_unop u 
+		(refertooperation r m.mid o1))
+	| Binary(b,o1,o2,t) -> makeoperationregvariable r v m o (vil_to_vast_binop b 
+		(refertooperation r m.mid o1) (refertooperation r m.mid o2))
+
+let makeoperationwire (r:vastmodule) (v:vvarinfo) (m:vmodule) (o:voperation) = match o.operation with
+	| Unary (u,o1,t) -> makeoperationwirevariable r v m o (vil_to_vast_unop u 
+		(refertooperation r m.mid o1))
+	| Binary(b,o1,o2,t) -> makeoperationwirevariable r v m o (vil_to_vast_binop b 
+		(refertooperation r m.mid o1) (refertooperation r m.mid o2))
+	| ReturnValue _ 
+	| Result(_,_,_,_) 
+	| Variable _ 
+	| Constant _-> makeoperation r v m o
+
+let makeoperationlatchvariables (r:vastmodule) (v:vvarinfo) (m:vmodule) (o:voperation) = match o.operation with
+	| ReturnValue o1 -> makereturnregvariable r v m (refertooperation r m.mid o1)
+	| Result(var,_,_,o1) -> makeoutputregvariable r m var (refertooperation r m.mid o1)
+	| Variable _ 
+	| Constant _
+	| Unary (_,_,_) 
+	| Binary(_,_,_,_) -> makeoperationwire r v m o
+
+let makeanoperation (r:vastmodule) (v:vvarinfo) (m:vmodule) (o:voperation) = 
+	if maxtime m = o.oschedule.set && List.exists (fun o1 -> o1.oid=o.oid) 
+		(Listutil.mapflatten getlinkchildren (getswitches m))
+	then makeoperationwire r v m o
+	else makeoperation r v m o
+
+let rec makeoperations (makeop:vastmodule -> vvarinfo -> vmodule -> voperation -> unit) 
+	(r:vastmodule) (v:vvarinfo) (m:vmodule) (acc:voperation list) 
+		(skip:voperation list) (ops:voperation list) = 
+	match (ops,skip) with
+	| ([],[]) -> ()
+	| ([],_ ) -> makeoperations makeop r v m acc [] skip
+	| (h::t,_) -> if(childreninlist true h acc)
+		then
+			(makeop r v m h;
+			makeoperations makeop r v m (h::acc) skip t)
+		else makeoperations makeop r v m acc (h::skip) t
+
 let iszerotime (m:vmodule) = 
 	maxtime m = 0 && List.length m.moutputs < 2
 
-let zero_time_module (r:vastmodule) (v:vvarinfo) (m:vmodule) = 
+let zero_time_module (r:vastmodule) (v:vvarinfo) (m:vmodule) =
 	List.iter (makeinputvariable r m) m.mvars;
 	makecontrolvariable WIRE r m;
-	let sw = getswitches m
-	in  List.iter2 (makeoperationwirevariable r m) sw (List.map (makeexp r m) sw)
-	;
-	let outputvars = ref m.mvarexports
-	in  List.iter (fun o -> match o.operation with
-			| Result(v,o1) -> 
-				outputvars := List.filter (fun v1 -> v1.varname <> v.varname) !outputvars;
-				makeoutputwirevariable r m v (makeexp r m o1)
-			| ReturnValue o1 -> makereturnwirevariable r v m (makeexp r m o1)
-			| _ -> ()) m.mdataFlowGraph;
-		List.iter (fun v -> 
+	makeoperations makeoperationwire r v m [] [] m.mdataFlowGraph;
+	let remainingoutputvars = List.filter (fun v -> not (hasvariableresult v m.mdataFlowGraph)) m.mvarexports
+	in  List.iter (fun v -> 
 			makeoutputwirevariable r m v (
 				defaultrange (getinputvariable r m.mid v)
-			)) !outputvars	
+			)) remainingoutputvars	
 
 let one_clock_module (r:vastmodule) (v:vvarinfo) (m:vmodule) =
 	List.iter (makeinputvariable r m) m.mvars;
 	makecontrolvariable REG r m;
-	let sw = getswitches m
-	in  List.iter2 (makeoperationwirevariable r m) sw (List.map (makeexp r m) sw)
-	;
-	let outputvars = ref m.mvarexports
-	in  List.iter (fun o -> match o.operation with
-			| Result(v,o1) -> 
-				outputvars := List.filter (fun v1 -> v1.varname <> v.varname) !outputvars;
-				makeoutputvariable r m v (makeexp r m o1)
-			| ReturnValue o1 -> makereturnvariable r v m (makeexp r m o1)
-			| _ -> ()) m.mdataFlowGraph;
-		List.iter (fun v -> 
-			makeoutputvariable r m v (
+	makeoperations makeoperationlatchvariables r v m [] [] m.mdataFlowGraph;
+	let remainingoutputvars = List.filter (fun v -> not (hasvariableresult v m.mdataFlowGraph)) m.mvarexports
+	in  List.iter (fun v -> 
+			makeoutputregvariable r m v (
 				defaultrange (getinputvariable r m.mid v)
-			)) !outputvars
-
-let refertooperation (r:vastmodule) (m:vmodule) (o:voperation) = 
-	defaultrange (getoperationvariable r m.mid o)
-
-let makeoperation (r:vastmodule) (v:vvarinfo) (m:vmodule) (o:voperation) = match o.operation with
-	| ReturnValue o1 -> makereturnwirevariable r v m (refertooperation r m o1)
-	| Result(var,o1) -> makeoutputwirevariable r m var (refertooperation r m o1)
-	| Variable _ 
-	| Constant _-> makeoperationwirevariable r m o (makeexp r m o)
-	| Unary (Cast,o1,t) -> makeoperationwirevariable r m o (vil_to_vast_unop Cast
-		(refertooperation r m o1))
-	| Unary (u,o1,t) -> makeoperationregvariable r m o (vil_to_vast_unop u 
-		(refertooperation r m o1))
-	| Binary(b,o1,o2,t) -> makeoperationregvariable r m o (vil_to_vast_binop b 
-		(refertooperation r m o1) (refertooperation r m o2))
-
-let makeoperationwire (r:vastmodule) (v:vvarinfo) (m:vmodule) (o:voperation) = match o.operation with
-	| Unary (u,o1,t) -> makeoperationwirevariable r m o (vil_to_vast_unop u 
-		(refertooperation r m o1))
-	| Binary(b,o1,o2,t) -> makeoperationwirevariable r m o (vil_to_vast_binop b 
-		(refertooperation r m o1) (refertooperation r m o2))
-	| ReturnValue _ 
-	| Result(_,_) 
-	| Variable _ 
-	| Constant _-> makeoperation r v m o
-
-let makeanoperation (r:vastmodule) (v:vvarinfo) (m:vmodule) (o:voperation) = 
-	if maxtime m = o.oschedule.set && List.exists (fun o1 -> o1.oid=o.oid) (getswitches m)
-	then makeoperationwire r v m o
-	else makeoperation r v m o
-
-let rec makeoperations (r:vastmodule) (v:vvarinfo) (m:vmodule) (acc:voperation list) 
-		(skip:voperation list) (ops:voperation list) = 
-	match (ops,skip) with
-	| ([],[]) -> ()
-	| ([],_ ) -> makeoperations r v m acc [] skip
-	| (h::t,_) -> if(childreninlist true h acc)
-		then
-			(makeanoperation r v m h;
-			makeoperations r v m (h::acc) skip t)
-		else makeoperations r v m acc (h::skip) t
+			)) remainingoutputvars	
 
 let positive_time_module (r:vastmodule) (v:vvarinfo) (m:vmodule) =
 	List.iter (makeinputvariable r m) m.mvars;
 	makecontrolvariablesequence (maxtime m) r m;
-	makeoperations r v m [] [] m.mdataFlowGraph;
-	let remainingoutputvars = List.filter (fun v -> not (hasvariableresult v m)) m.mvarexports
+	makeoperations makeanoperation r v m [] [] m.mdataFlowGraph;
+	let remainingoutputvars = List.filter (fun v -> not (hasvariableresult v m.mdataFlowGraph)) m.mvarexports
 	in  List.iter (fun v -> 
-			makeoutputvariable r m v (
+			makeoutputwirevariable r m v (
 				defaultrange (getinputvariable r m.mid v)
 			)) remainingoutputvars	
 
@@ -279,12 +267,12 @@ let getexpfromconnection (r:vastmodule) (c:vconnection) = match c with
 	| {connectfrom=Some i; requires=Some (o,true)} ->
 		BINARY (LAND,
 			defaultrange (getcontrolendvariable r i),
-			defaultrange (getoperationvariable r i o)
+			refertooperation r i o
 		)
 	| {connectfrom=Some i; requires=Some (o,false)} ->
 		BINARY (LAND,
 			defaultrange (getcontrolendvariable r i),
-			UNARY(ULNOT,defaultrange (getoperationvariable r i o))
+			UNARY(ULNOT,refertooperation r i o)
 		)
 
 let dataconnections (r:vastmodule) (m:vmodule) = 
@@ -326,11 +314,11 @@ let returnconnections (r:vastmodule) (f:funmodule) =
 				| None -> defaultrange (getcontrolendvariable r i)
 				| Some (o,true) -> BINARY (LAND,
 					defaultrange (getcontrolendvariable r i),
-					defaultrange (getoperationvariable r i o)
+					refertooperation r i o
 				)
 				| Some (o,false) -> BINARY (LAND,
 					defaultrange (getreturnvariable r i),
-					UNARY(ULNOT,defaultrange (getoperationvariable r i o))
+					UNARY(ULNOT,refertooperation r i o)
 				))) 
 			(defaultrange (getvar r finishoutput)) returnpoints)));
 		addclocked r (getvar r f.vdesc.varname) 
@@ -350,9 +338,9 @@ let vil_to_vast_connections (r:vastmodule) (m:vmodule) =
 	dataconnections r m
 
 let vil_to_vast (f:funmodule):vastmodule = 
-	let startcontrol = vil_to_vast_variable NA {varname=startinput; vtype=Basic {width=1; isSigned=false}}
-	in let startfollowcontrol = vil_to_vast_variable REG {varname=startfollow; vtype=Basic {width=1; isSigned=false}}
-	in let readycontrol = vil_to_vast_variable REG {varname=finishoutput; vtype=Basic {width=1; isSigned=false}}
+	let startcontrol = {name=startinput; resetto=Big_int.zero_big_int; typ={width=1; isSigned=false; logictype=NA; }; } 
+	in let startfollowcontrol = {name=startfollow; resetto=Big_int.zero_big_int; typ={width=1; isSigned=false; logictype=REG; }; } 
+	in let readycontrol = {name=finishoutput; resetto=Big_int.zero_big_int; typ={width=1; isSigned=false; logictype=REG; }; } 
 	in let resultoutput = vil_to_vast_variable REG f.vdesc
 	in let ret = {
 		modname = f.vdesc.varname;
