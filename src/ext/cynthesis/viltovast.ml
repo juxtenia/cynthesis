@@ -151,7 +151,7 @@ let makereturnwirevariable (r:vastmodule) (v:vvarinfo) (m:vmodule) (o:vastexpres
 		(vil_to_vast_type WIRE v.vtype)) true o
 
 let refertocomplink (r:vastmodule) (mid:int) (cl:vcomplink) = 
-	VARIABLE {variable=getoperationvariable r mid cl.loperation; range=Some(cl.lbase,cl.lbase+cl.lwidth-1)}
+	VARIABLE {variable=getoperationvariable r mid cl.loperation; range=Some(cl.lbase+cl.lwidth-1,cl.lbase)}
 
 let refertooperation (r:vastmodule) (mid:int) (ol:voperationlink) = match ol with
 	| Simple o -> defaultrange (getoperationvariable r mid o)
