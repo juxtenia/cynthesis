@@ -12,6 +12,13 @@ let mapfilter f l =
 		)
 	in driver [] l
 
+(** takes a function a' -> b' list
+ *  and maps it to the list l:a' list
+ *  collecting the results together
+ *)
+let mapflatten f l =
+	List.flatten (List.map f l)
+
 (** Gives the index of item i in list l	
  *)
  let indexof v l = 
