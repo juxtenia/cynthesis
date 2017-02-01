@@ -20,13 +20,13 @@ module tb_bitcount
     logic [31:0] testinputs [8:0];
     logic [31:0] testoutputs [8:0];
 
-    bitcount dut (
+    bitsum dut (
 		.clk(clk),
 		.rst(rst),
 		.start(started),
 		.in(in),
 		.finish(finished),
-		.bitcount(count)
+		.bitsum(count)
 	);
 
 	int numerr;
