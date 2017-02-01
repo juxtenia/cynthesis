@@ -81,6 +81,6 @@ end
 let check (f:file) :bool =
 	let vald = new validatorVisitor
 	in List.iter (fun g -> match g with
-		| GFun(f,_) -> visitCilFunction vald f; ()
+		| GFun(f,_) -> ignore (visitCilFunction vald f); ()
 		| _ -> ();
 	) f.globals; !pass;;
