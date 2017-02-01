@@ -400,3 +400,4 @@
 /tests/*/*.wlf
 /tests/*/*.vstf
 /tests/bitcount/bitcount.sv
+/tests/bitsum/bitsum.sv
