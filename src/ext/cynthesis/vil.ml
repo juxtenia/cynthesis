@@ -428,7 +428,8 @@ let getentrypoint (f:funmodule) = List.find (fun m -> match m.binputs with
 	) f.vblocks
 
 (* extracts module from an id *)
-let modulefromintoption (f:funmodule) (io:int option) = match io with
+let modulefromintoption (f:funmodule) (io:int option) = 
+	match io with
 	| Some i -> Some (List.find (fun m -> m.bid = i) f.vblocks)
 	| None -> None
 
@@ -437,7 +438,7 @@ let getblocksucessors (f:funmodule) (m:vblock) :vblock list =
 	Listutil.mapfilter (fun c -> modulefromintoption f c.connectto) m.boutputs
 
 (* gives a predecessor list *)
-let getmodulepredecessors (f:funmodule) (m:vblock) :vblock list = 
+let getblockpredecessors (f:funmodule) (m:vblock) :vblock list = 
 	Listutil.mapfilter (fun c -> modulefromintoption f c.connectfrom) m.binputs
 
 (* is variable v in list l ? (name equality)*)

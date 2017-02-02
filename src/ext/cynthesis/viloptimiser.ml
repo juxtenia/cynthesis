@@ -11,9 +11,7 @@ let generateconnections (m:funmodule) = List.iter
 				| Some m2 -> m2.binputs <- (c :: m2.binputs)
 				| None -> ()
 		) m1.boutputs
-	) m.vblocks;
-	m.vblocks <- List.filter
-		(fun m1 -> List.length m1.binputs <> 0) m.vblocks
+	) m.vblocks
 
 (* merge two blocks together *)
 let mergeblocks (m1:vblock) (m2:vblock) = 
@@ -83,15 +81,13 @@ let rec addvariable (f:funmodule) (m:vblock) (v:vvarinfo) =
 				| _ -> false) from.bdataFlowGraph
 			then ()
 			else addvariable f from v 
-		) (getmodulepredecessors f m)
+		) (getblockpredecessors f m)
 	)
 
 (* generate all variables in all blocks *)
 let generatedataflow (f:funmodule) = List.iter
-	(fun m -> E.log "block %d\n" m.bid;
-		List.iter 
-		(fun o -> E.log "operation %d\n" o.oid;
-			match o.operation with
+	(fun m -> List.iter 
+		(fun o -> match o.operation with
 				| Variable v -> addvariable f m v
 				| _ -> ()
 		) m.bdataFlowGraph) f.vblocks
