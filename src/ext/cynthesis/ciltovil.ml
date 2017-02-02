@@ -185,7 +185,7 @@ let generateset (lv:lval) (e:exp) :voperation list =
 	in result :: ops
 
 (* generates operations from a list of Cil instr *)
-let rec makeinstrlist (m:vmodule) (il:instr list) =
+let rec makeinstrlist (m:vblock) (il:instr list) =
 	match il with
 	| h :: t -> (match h with
 		| Set (lv,e,l) -> 
@@ -209,7 +209,7 @@ let ifconnection f s tt tf p =
   		requires = Some (s,false); probability=1.0-.p} :: []
 
 (* generates a module from a Cil stmt *)
-let generatemodule (v:vvarinfo) (entryid:int) (s:stmt) :vmodule = 
+let generatemodule (v:vvarinfo) (entryid:int) (s:stmt) :vblock = 
 	let ret = 
 	{
 		mid = s.sid;
@@ -283,7 +283,7 @@ let generatefunmodule (f:fundec) :funmodule = dataid := 0; (* Reset op ids *)
 		vdesc = vardesc;
 		vinputs = generatevariables f.sformals;
 		vlocals = generatevariables f.slocals;
-		vmodules = List.map (generatemodule vardesc entryid) filteredstmts;
+		vblocks = List.map (generatemodule vardesc entryid) filteredstmts;
 	}
 	in  (* run optimisation pass *)
 		Viloptimiser.optimisefunmodule ret;

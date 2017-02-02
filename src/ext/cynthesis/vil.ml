@@ -1,6 +1,7 @@
 open Big_int
 module E = Errormsg
 
+(** the amount of iterations to assume loops perform if there's no other information *)
 let averageloopcount = ref 40;;
 
 (** Unary Operations*)
@@ -27,6 +28,7 @@ and binop =
   | BAnd                                (** bitwise and *)
   | BXor                                (** bitwise exclusive-or *)
   | BOr                                 (** bitwise inclusive-or *)
+(** top level function module *)
 and funmodule = {
 	mutable vdesc: vvarinfo;
 		(** The name and output type of the function *) 
@@ -34,21 +36,24 @@ and funmodule = {
 		(** The parameters to the function *)
 	mutable vlocals: vvarinfo list;
 		(** The local variables in the function *)
-	mutable vmodules: vmodule list;
+	mutable vblocks: vblock list;
 		(** The modules that provide internal functionality *)
 }
+(** variable information *)
 and vvarinfo = {
 	mutable varname: string;
 		(** The name of the variable *)
 	mutable vtype: vtype;
 		(** the type of this constant *)
 }
+(** constant information *)
 and vconstinfo = {
 	mutable value: big_int;
 		(** the value of this constant *)
 	mutable ctype: vtype;
 		(** the type of this constant *)
 }
+(** connection between two modules *)
 and vconnection = {
 	mutable connectfrom: int option;
 		(** The id of the exporting module, none means from the start *)
@@ -61,7 +66,8 @@ and vconnection = {
 	mutable probability: float;
 		(** The likelihood of taking this connection*)
 }
-and vmodule = {
+(** a module representing a basic block *)
+and vblock = {
 	mutable mid: int;
 		(** The id of this module in the function *)
 	mutable mvars: vvarinfo list;
@@ -174,7 +180,7 @@ and string_of_funmodule f =
 	"{ vdesc:" ^ string_of_vvarinfo f.vdesc
 	^ ", vinputs:" ^ string_of_vvarinfo_list f.vinputs
 	^ ", vlocals:" ^ string_of_vvarinfo_list f.vlocals
-	^ ", vmodules:" ^ string_of_vmodule_list f.vmodules
+	^ ", vblocks:" ^ string_of_vblock_list f.vblocks
 	^ "}"
 and string_of_vvarinfo v = 
 	"{ varname:\"" ^ v.varname
@@ -202,13 +208,13 @@ and string_of_vconnection c =
 	^ ", probability:" ^ string_of_float c.probability
 	^ "}"
 and string_of_vconnection_list l = string_of_list_sq string_of_vconnection l
-and string_of_vmodule m = 
+and string_of_vblock m = 
 	"{ mid:" ^ string_of_int m.mid
 	^ ", minputs:" ^ string_of_vconnection_list m.minputs
 	^ ", moutputs:" ^ string_of_vconnection_list m.moutputs
 	^ ", mdataFlowGraph:" ^ string_of_voperation_list m.mdataFlowGraph
 	^ "}"
-and string_of_vmodule_list l = string_of_list_sq string_of_vmodule l
+and string_of_vblock_list l = string_of_list_sq string_of_vblock l
 and string_of_voperationlink ol = match ol with
 	| Simple o -> "Simple:" ^ string_of_voperation o
 	| Compound ol -> "Compound:" ^ string_of_list_sq string_of_vcomplink ol
@@ -292,7 +298,7 @@ and print_funmodule f =
 	(print_vvarinfo f.vdesc)
 	^ "\n\tinputs:" ^ string_of_list_sq print_vvarinfo f.vinputs
 	^ "\n\tlocals:" ^ string_of_list_sq print_vvarinfo f.vlocals
-	^ "\n\tmodules:\n\t" ^ (String.concat "\n\t" (List.map print_vmodule f.vmodules))
+	^ "\n\tmodules:\n\t" ^ (String.concat "\n\t" (List.map print_vblock f.vblocks))
 and print_vvarinfo v = 
 	v.varname ^ ": " ^ (print_vtype v.vtype)
 and print_vconstinfo c = 
@@ -313,7 +319,7 @@ and print_vconnections (c:vconnection list) = match c with
 		| None -> "return"
 	) ^ "\t\t(" ^ string_of_float pt ^ ":" ^ string_of_float pf ^ ")"
 	| _ -> string_of_list_sq string_of_vconnection c
-and print_vmodule m = 
+and print_vblock m = 
 	(string_of_int m.mid) ^ " " ^ (print_vconnections m.moutputs) 
 	^ "    ( " ^ (String.concat ", " (List.map (fun v -> v.varname) m.mvars))
 	^ " ) -> ( " ^ (String.concat ", " (List.map (fun v -> v.varname) m.mvarexports))
@@ -411,19 +417,19 @@ let operationoffset (o:voperation) = match o.operation with
 let getentrypoint (f:funmodule) = List.find (fun m -> match m.minputs with
 		| [{connectfrom=None;connectto=Some _;requires=None}] -> true
 		| _ -> false
-	) f.vmodules
+	) f.vblocks
 
 (* extracts module from an id *)
 let modulefromintoption (f:funmodule) (io:int option) = match io with
-	| Some i -> Some (List.find (fun m -> m.mid = i) f.vmodules)
+	| Some i -> Some (List.find (fun m -> m.mid = i) f.vblocks)
 	| None -> None
 
 (* gives a sucessor list *)
-let getmodulesucessors (f:funmodule) (m:vmodule) :vmodule list = 
+let getmodulesucessors (f:funmodule) (m:vblock) :vblock list = 
 	Listutil.mapfilter (fun c -> modulefromintoption f c.connectto) m.moutputs
 
 (* gives a predecessor list *)
-let getmodulepredecessors (f:funmodule) (m:vmodule) :vmodule list = 
+let getmodulepredecessors (f:funmodule) (m:vblock) :vblock list = 
 	Listutil.mapfilter (fun c -> modulefromintoption f c.connectfrom) m.minputs
 
 (* is variable v in list l ? (name equality)*)
@@ -438,7 +444,7 @@ let hasvariableresult (v:vvarinfo) (o:voperation list) =
 		) o
 
 (* doesn m have a variable operation for v? *)
-let hasvariableuse (v:vvarinfo) (m:vmodule) = 
+let hasvariableuse (v:vvarinfo) (m:vblock) = 
 	List.exists (fun op -> match op.operation with
 			| Variable v1 when v1.varname = v.varname -> true
 			| _ -> false
@@ -461,7 +467,7 @@ let incchildren = dotoimmediatechildren incoperationcount;;
 let decchildren = dotoimmediatechildren decoperationcount;;
 
 (* get switching points *)
-let getswitches (m:vmodule) = 
+let getswitches (m:vblock) = 
 	let foundids = ref []
 	in (Listutil.mapfilter (fun c -> match c.requires with
 		| Some(o,_) when not (List.mem o !foundids) -> 
@@ -481,8 +487,8 @@ let rec gettype (f:vvarinfo) (o:voperation) = match o.operation with
 (* get the name of a function *)
 let functionname (f:funmodule) = f.vdesc.varname
 
-(* gets the latest scheduled item in a vmodule *)
-let maxtime (m:vmodule) = 
+(* gets the latest scheduled item in a vblock *)
+let maxtime (m:vblock) = 
 	List.fold_left (fun a o -> max o.oschedule.set a) 0 m.mdataFlowGraph
 
 (* code for filling in the schedule *)
@@ -523,7 +529,7 @@ let rec generatealap (latest:int) (acc:voperation list) (ops:voperation list) =
 			generatealap latest (List.rev_append ready acc) notready
 
 (* generates an overall schedule for the module *)
-let rec generateschedule (m:vmodule) =
+let rec generateschedule (m:vblock) =
 	List.iter (fun o -> o.oschedule <- (* TODO add non trivial scheduler *)
 	{earliest=o.oschedule.earliest;latest=o.oschedule.latest;set=o.oschedule.earliest}) m.mdataFlowGraph
 
@@ -534,7 +540,7 @@ let generatescheduleinfo (f:funmodule) =
 		generatealap (List.fold_left (fun a b -> max a b.oschedule.earliest) (* find max time *)
 			0 m.mdataFlowGraph) [] m.mdataFlowGraph;
 		generateschedule m;
-	) f.vmodules
+	) f.vblocks
 
 (* subroutines to replace operations, useful later *)
 

@@ -11,28 +11,22 @@ let generateconnections (m:funmodule) = List.iter
 				| Some m2 -> m2.minputs <- (c :: m2.minputs)
 				| None -> ()
 		) m1.moutputs
-	) m.vmodules;
-	m.vmodules <- List.filter
-		(fun m1 -> List.length m1.minputs <> 0) m.vmodules
+	) m.vblocks;
+	m.vblocks <- List.filter
+		(fun m1 -> List.length m1.minputs <> 0) m.vblocks
 
 (* merge two modules together *)
-let mergemodules (m1:vmodule) (m2:vmodule) = 
-	let ret = {
-			mid = m1.mid;
-			minputs = m1.minputs;
-			moutputs = m2.moutputs;
-			mvars = m1.mvars;
-			mvarexports = m2.mvarexports;
-			mdataFlowGraph = mergeoperations m1.mdataFlowGraph m2.mdataFlowGraph m2.moutputs;
-		}
-	(* remove result tags if one exists in second module *)
-	in 	(* update the id's of the connections *)
-		List.iter (fun c -> c.connectfrom <- Some ret.mid) ret.moutputs;
-		(* return *)
-		ret;; 
+let mergemodules (m1:vblock) (m2:vblock) = 
+	m1.moutputs <- m2.moutputs;
+	m1.mvarexports <- m2.mvarexports;
+	m1.mdataFlowGraph <- mergeoperations m1.mdataFlowGraph m2.mdataFlowGraph m1.moutputs;
+	(* update the id's of the connections *)
+	List.iter (fun c -> c.connectfrom <- Some m1.mid) m1.moutputs;
+	(* return *)
+	m1
 
 (* merge modules with redundant control flow *)
-let rec compactmodules (acc:vmodule list) (mods:vmodule list) =
+let rec compactmodules (acc:vblock list) (mods:vblock list) =
 	match mods with
 	| [] -> acc
 	| h::t -> (match h.moutputs with
@@ -47,7 +41,7 @@ let rec compactmodules (acc:vmodule list) (mods:vmodule list) =
 					then compactmodules ac1 ((mergemodules h m) :: rem)
 					(* skip module *)
 					else compactmodules (h :: acc) t
-				| _ -> E.s (E.error "Incorrect module connections or ids: [%s]\n" (String.concat ", " (List.map string_of_vmodule it)))
+				| _ -> E.s (E.error "Incorrect module connections or ids: [%s]\n" (String.concat ", " (List.map string_of_vblock it)))
 			)
 		| _ -> compactmodules (h :: acc) t
 	)
@@ -58,7 +52,7 @@ let rec compactmodules (acc:vmodule list) (mods:vmodule list) =
  * outputs of predecessors, then checks predecessors
  * if they assign the variable stop, otherwise add to them
  *)
-let rec addvariable (f:funmodule) (m:vmodule) (v:vvarinfo) = 
+let rec addvariable (f:funmodule) (m:vblock) (v:vvarinfo) = 
 	if variableinlist v m.mvars
 	then () 
 	else (
@@ -81,7 +75,7 @@ let generatedataflow (f:funmodule) = List.iter
 		(fun o -> match o.operation with
 				| Variable v -> addvariable f m v
 				| _ -> ()
-		) m.mdataFlowGraph) f.vmodules
+		) m.mdataFlowGraph) f.vblocks
 
 (* removes assignments to variables that are not used later *)
 let pruneresults (f:funmodule) = List.iter
@@ -90,7 +84,7 @@ let pruneresults (f:funmodule) = List.iter
 			| Result (v,_,_,_) when not (List.exists 
 				(fun s -> variableinlist v s.mvars) (getmodulesucessors f m)) -> false
 			| _ -> true
-		) m.mdataFlowGraph) f.vmodules
+		) m.mdataFlowGraph) f.vblocks
 
 (* remove unused variables (caused by merging modules) *)
 let variablecull (f:funmodule) = 
@@ -106,7 +100,7 @@ let variablecull (f:funmodule) =
 				| Variable v1 when v1.varname = v.varname -> true
 				| _ -> false
 			) m.mdataFlowGraph
-		) f.vmodules
+		) f.vblocks
 	) f.vlocals;
 	(* do safety check to ensure variables at entry point are
 	 * inputs and not local variables *)
@@ -160,13 +154,13 @@ let rec compactoperations (c:vconnection list) (acc:voperation list)
 (* optimises away unecessary operations *)
 let culloperations (f:funmodule) = 
 	List.iter (fun m -> 
-		dooperationcounts m.moutputs m.mdataFlowGraph) f.vmodules;
+		dooperationcounts m.moutputs m.mdataFlowGraph) f.vblocks;
 	List.iter (fun m -> 
 		m.mdataFlowGraph <- pruneoperations m.mdataFlowGraph
-	) f.vmodules;
+	) f.vblocks;
 	List.iter (fun m ->
 		m.mdataFlowGraph <- compactoperations m.moutputs [] [] m.mdataFlowGraph
-	) f.vmodules;;
+	) f.vblocks;;
 
 (* optimising entry point *)
 let optimisefunmodule (f:funmodule) = 
@@ -178,7 +172,7 @@ let optimisefunmodule (f:funmodule) =
 		(* Straightening optimisation 
 		 * merge basic blocks with basic control flow
 		 *)
-		f.vmodules <- compactmodules [] f.vmodules;
+		f.vblocks <- compactmodules [] f.vblocks;
 		(* Live variable analysis
 		 * annotates modules with live variables,
 		 * removes unnecessary Result (_,_) labels and
