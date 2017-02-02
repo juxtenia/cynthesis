@@ -167,10 +167,10 @@ let overwritevariable (v:vvarinfo) (b:int) (w:int) (ol:voperationlink) =
 		else [{lbase=0;lwidth=b;loperation=op;}]
 	in let terminal = if b + w = (gettypeelement v.vtype).width then [] 
 		else [{lbase=b+w;lwidth=(gettypeelement v.vtype).width-(b+w);loperation=op}]
-	in let middle = match ol with
+	in let biddle = match ol with
 		| Simple o -> [{lbase=0;lwidth=w;loperation=o;}]
 		| Compound cll -> getrange 0 w cll
-	in Compound (initial @ middle @ terminal)
+	in Compound (initial @ biddle @ terminal)
 
 let generateset (lv:lval) (e:exp) :voperation list =
 	let (ops,reslink) = makedataflow e 
@@ -189,7 +189,7 @@ let rec makeinstrlist (m:vblock) (il:instr list) =
 	match il with
 	| h :: t -> (match h with
 		| Set (lv,e,l) -> 
-			m.mdataFlowGraph <- mergeoperations m.mdataFlowGraph (generateset lv e) m.moutputs;
+			m.bdataFlowGraph <- mergeoperations m.bdataFlowGraph (generateset lv e) m.boutputs;
 			makeinstrlist m t
 		| Call (_,_,_,l) -> E.s (E.error "At %a illegal instr %a.\n" d_loc l d_instr h) 
 		| Asm (_,_,_,_,_,l) -> E.s (E.error "At %a illegal instr %a.\n" d_loc l d_instr h) 
@@ -212,78 +212,81 @@ let ifconnection f s tt tf p =
 let generatemodule (v:vvarinfo) (entryid:int) (s:stmt) :vblock = 
 	let ret = 
 	{
-		mid = s.sid;
-		minputs = [];
-		moutputs = [];
-		mvars = [];
-		mvarexports = [];
-		mdataFlowGraph = [];
+		bid = s.sid;
+		binputs = [];
+		boutputs = [];
+		bvars = [];
+		bvarexports = [];
+		bdataFlowGraph = [];
 	} in begin 
 		(match s.skind with
 			| Instr (il) -> (match s.succs with
-  				| h::[] -> ret.moutputs <- oneconnection s.sid h.sid
+  				| h::[] -> ret.boutputs <- oneconnection s.sid h.sid
   				| _ -> E.s (E.error "Stmt %a has incorrect successors\n" d_stmt s)
   			); makeinstrlist ret il
   			| Return (eo,l) -> (match eo with
   					| None -> ()
-  					| Some e -> ret.mdataFlowGraph <- makereturn e
+  					| Some e -> ret.bdataFlowGraph <- makereturn e
   				);
   				(match s.succs with
-  					| [] -> ret.moutputs <- returnconnection s.sid
+  					| [] -> ret.boutputs <- returnconnection s.sid
   					| _ -> E.s (E.error "At %a stmt %a has incorrect successors\n" d_loc l d_stmt s)
   				)
   			| Goto (_,l) -> (match s.succs with
-  				| h::[] -> ret.moutputs <- oneconnection s.sid h.sid
+  				| h::[] -> ret.boutputs <- oneconnection s.sid h.sid
   				| _ -> E.s (E.error "At %a stmt %a has incorrect successors\n" d_loc l d_stmt s)
   			)
   			| Break (l) -> (match s.succs with
-  				| h::[] -> ret.moutputs <- oneconnection s.sid h.sid
+  				| h::[] -> ret.boutputs <- oneconnection s.sid h.sid
   				| _ -> E.s (E.error "At %a stmt %a has incorrect successors\n" d_loc l d_stmt s)
   			)
   			| Continue (l) -> (match s.succs with
-  				| h::[] -> ret.moutputs <- oneconnection s.sid h.sid
+  				| h::[] -> ret.boutputs <- oneconnection s.sid h.sid
   				| _ -> E.s (E.error "At %a stmt %a has incorrect successors\n" d_loc l d_stmt s)
   			)
   			| If (e,b1,b2,l) -> let (ops,result) = makedataflow e
-  				in  ret.mdataFlowGraph <- ops;
+  				in  ret.bdataFlowGraph <- ops;
   					(match s.succs with
-  						| fb::tb::[] -> ret.moutputs <- ifconnection s.sid result tb.sid fb.sid 0.5
+  						| fb::tb::[] -> ret.boutputs <- ifconnection s.sid result tb.sid fb.sid 0.5
   						| _ -> E.s (E.error "At %a stmt %a has incorrect successors\n" d_loc l d_stmt s)
   					)
   			| Loop (_,l,_,_) -> (match s.succs with
-  				| h::[] -> ret.moutputs <- oneconnection s.sid h.sid
+  				| h::[] -> ret.boutputs <- oneconnection s.sid h.sid
   				| _ -> E.s (E.error "At %a stmt %a has incorrect successors\n" d_loc l d_stmt s)
   			)
   			| Block (_) -> (match s.succs with
-  				| h::[] -> ret.moutputs <- oneconnection s.sid h.sid
+  				| h::[] -> ret.boutputs <- oneconnection s.sid h.sid
   				| _ -> E.s (E.error "Stmt %a has incorrect successors\n" d_stmt s)
   			)
   			| _ -> E.s (E.error "Illegal stmt %a.\n" d_stmt s) 
   		);
-  		if(s.sid = entryid) then ret.minputs <- 
-  		{connectfrom=None;connectto=Some entryid;requires=None;probability=1.0}::ret.minputs
+  		if(s.sid = entryid) then ret.binputs <- 
+  		{connectfrom=None;connectto=Some entryid;requires=None;probability=1.0}::ret.binputs
   			else ();
   		ret
 	end
 
-(* removes all stmts with no preds, excluding the first statement *)
-let extractminentry (ss:stmt list) :(int *stmt list) = 
+(* removes identifies the entry point *)
+let extractminentry (ss:stmt list) :int = 
 	match ss with 
 		| [] -> E.s (E.error "Empty function body")
-		| h::t -> (h.sid, h::(List.filter (fun s -> (List.length s.preds) <> 0) t))
+		| h::t -> h.sid
 
 (* generates a top level module from a function definition *)
-let generatefunmodule (f:fundec) :funmodule = dataid := 0; (* Reset op ids *)
+let generatefunmodule (f:fundec) :funmodule = 
+	(* Reset op ids *)
+	dataid := 0; 
 	(* generate variable for function *)
 	let vardesc = generatedesc f.svar
-	in let (entryid,filteredstmts) = (extractminentry f.sallstmts)
+	(* identify entry point, and remove some unreachable code *)
+	in let entryid = (extractminentry f.sallstmts)
 	(* basic starting point, this needs optimisation 
 	 * and annotation before it is useful*)
 	in let ret = {
 		vdesc = vardesc;
 		vinputs = generatevariables f.sformals;
 		vlocals = generatevariables f.slocals;
-		vblocks = List.map (generatemodule vardesc entryid) filteredstmts;
+		vblocks = List.map (generatemodule vardesc entryid) f.sallstmts;
 	}
 	in  (* run optimisation pass *)
 		Viloptimiser.optimisefunmodule ret;

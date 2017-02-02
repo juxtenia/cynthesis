@@ -1,9 +1,6 @@
 open Big_int
 module E = Errormsg
 
-(** the amount of iterations to assume loops perform if there's no other information *)
-let averageloopcount = ref 40;;
-
 (** Unary Operations*)
 type unop =
   | Cast                                (** Cast expression*)
@@ -37,7 +34,7 @@ and funmodule = {
 	mutable vlocals: vvarinfo list;
 		(** The local variables in the function *)
 	mutable vblocks: vblock list;
-		(** The modules that provide internal functionality *)
+		(** The blocks that provide internal functionality *)
 }
 (** variable information *)
 and vvarinfo = {
@@ -53,7 +50,7 @@ and vconstinfo = {
 	mutable ctype: vtype;
 		(** the type of this constant *)
 }
-(** connection between two modules *)
+(** connection between two blocks *)
 and vconnection = {
 	mutable connectfrom: int option;
 		(** The id of the exporting module, none means from the start *)
@@ -66,23 +63,26 @@ and vconnection = {
 	mutable probability: float;
 		(** The likelihood of taking this connection*)
 }
-(** a module representing a basic block *)
+(** a structure representing a basic block *)
 and vblock = {
-	mutable mid: int;
+	mutable bid: int;
 		(** The id of this module in the function *)
-	mutable mvars: vvarinfo list;
+	mutable bvars: vvarinfo list;
 		(** The variables inputed to this module *)
-	mutable mvarexports: vvarinfo list;
+	mutable bvarexports: vvarinfo list;
 		(** The variables outputed from this module *)
-	mutable minputs: vconnection list;
+	mutable binputs: vconnection list;
 		(** The incoming connections *)
-	mutable moutputs: vconnection list;
-		(** The posible modules to hand control flow to *)
-	mutable mdataFlowGraph: voperation list;
+	mutable boutputs: vconnection list;
+		(** The posible blocks to hand control flow to *)
+	mutable bdataFlowGraph: voperation list;
+		(** The data flow graph of operations *)
 }
+(** a link to a suboperation *)
 and voperationlink = 
 	| Simple of voperation
 	| Compound of vcomplink list
+(** a complex link *)
 and vcomplink = {
 	mutable loperation: voperation;
 		(** the operation linked from *)
@@ -91,6 +91,7 @@ and vcomplink = {
 	mutable lwidth: int;
 		(** the size of the link *)
 }
+(** an operation on data *)
 and voperation = {
 	mutable oid: int;
 		(** id used to remove duplicates inside a module *)
@@ -101,6 +102,7 @@ and voperation = {
 	mutable oschedule: vscheduleinfo;
 		(** the scheduling data of this operation *)
 }
+(** the scheduling information for an operation *)
 and vscheduleinfo = {
 	earliest: int;
 		(** asap schedule *)
@@ -109,6 +111,7 @@ and vscheduleinfo = {
 	set: int;
 		(** actual schedule *)
 }
+(** the type of an operation *)
 and voperationtype = 
 	| Variable of vvarinfo
 		(** The value of a variable as it enters the module *)
@@ -123,16 +126,19 @@ and voperationtype =
 		(** applies a unary operation to the previous item *)
 	| Binary of binop * voperationlink * voperationlink * vtype
 		(** applies a binary operation to the previous items *)  
+(** types for vil *)
 and vtype = 
 	| Basic of vtypeelement
 	| Struct of vtypeelement * vcompelement list
 	| Union of vtypeelement * vcompelement list
+(** basic unit of type information *)
 and vtypeelement = {
 	(** The width of the type, in bits *)
 	mutable width: int;
 	(** Whether this is a signed variable *)
 	mutable isSigned: bool;
 }
+(** element of composite type *)
 and vcompelement = {
 	(** The name of the element *)
 	mutable ename: string;
@@ -142,11 +148,12 @@ and vcompelement = {
 	mutable ebase: int;
 }
 
+(** blank schedule to initialise with *)
 let emptyschedule = {earliest = 0; latest = 0; set = 0};;
 
 (** The following functions produce a JSON like dump of all the 
  *  information inside any of the above data types. Since there are
- *  typically multiple references to certain items within modules,
+ *  typically multiple references to certain items within blocks,
  *  some items are represented only by an id.
  *)
 let string_of_list lp rp sf fl = lp ^ (String.concat ", " (List.map sf fl)) ^ rp
@@ -209,10 +216,10 @@ and string_of_vconnection c =
 	^ "}"
 and string_of_vconnection_list l = string_of_list_sq string_of_vconnection l
 and string_of_vblock m = 
-	"{ mid:" ^ string_of_int m.mid
-	^ ", minputs:" ^ string_of_vconnection_list m.minputs
-	^ ", moutputs:" ^ string_of_vconnection_list m.moutputs
-	^ ", mdataFlowGraph:" ^ string_of_voperation_list m.mdataFlowGraph
+	"{ bid:" ^ string_of_int m.bid
+	^ ", binputs:" ^ string_of_vconnection_list m.binputs
+	^ ", boutputs:" ^ string_of_vconnection_list m.boutputs
+	^ ", bdataFlowGraph:" ^ string_of_voperation_list m.bdataFlowGraph
 	^ "}"
 and string_of_vblock_list l = string_of_list_sq string_of_vblock l
 and string_of_voperationlink ol = match ol with
@@ -298,7 +305,7 @@ and print_funmodule f =
 	(print_vvarinfo f.vdesc)
 	^ "\n\tinputs:" ^ string_of_list_sq print_vvarinfo f.vinputs
 	^ "\n\tlocals:" ^ string_of_list_sq print_vvarinfo f.vlocals
-	^ "\n\tmodules:\n\t" ^ (String.concat "\n\t" (List.map print_vblock f.vblocks))
+	^ "\n\tblocks:\n\t" ^ (String.concat "\n\t" (List.map print_vblock f.vblocks))
 and print_vvarinfo v = 
 	v.varname ^ ": " ^ (print_vtype v.vtype)
 and print_vconstinfo c = 
@@ -320,10 +327,10 @@ and print_vconnections (c:vconnection list) = match c with
 	) ^ "\t\t(" ^ string_of_float pt ^ ":" ^ string_of_float pf ^ ")"
 	| _ -> string_of_list_sq string_of_vconnection c
 and print_vblock m = 
-	(string_of_int m.mid) ^ " " ^ (print_vconnections m.moutputs) 
-	^ "    ( " ^ (String.concat ", " (List.map (fun v -> v.varname) m.mvars))
-	^ " ) -> ( " ^ (String.concat ", " (List.map (fun v -> v.varname) m.mvarexports))
-	^ " )\n\t\t" ^ (String.concat "\n\t\t" (List.map print_voperation m.mdataFlowGraph))
+	(string_of_int m.bid) ^ " " ^ (print_vconnections m.boutputs) 
+	^ "    ( " ^ (String.concat ", " (List.map (fun v -> v.varname) m.bvars))
+	^ " ) -> ( " ^ (String.concat ", " (List.map (fun v -> v.varname) m.bvarexports))
+	^ " )\n\t\t" ^ (String.concat "\n\t\t" (List.map print_voperation m.bdataFlowGraph))
 and print_voperation o = 
 	(string_of_int o.oid) ^ " ==== " ^ (print_voperationtype o.operation)
 	^ "\t\t" ^ (print_vscheduleinfo o.oschedule)
@@ -384,12 +391,12 @@ let eq_operation (o1:voperation) (o2:voperation) =
 	o1.oid = o2.oid && eq_operation_type o1.operation o2.operation
 
 
-
+(** gets the children from a link *)
 let getlinkchildren (l:voperationlink) = match l with
 	| Simple o -> [o]
 	| Compound ol -> List.map (fun l -> l.loperation) ol
 
-(* gets the children of an operation *)
+(** gets the children of an operation *)
 let getchildren (o:voperation) = 
 	match o.operation with
 	| Result (_,_,_,o1) -> getlinkchildren o1
@@ -398,14 +405,14 @@ let getchildren (o:voperation) =
 	| Binary (_,o1,o2,_) -> (getlinkchildren o1) @ (getlinkchildren o2)
 	| _ -> []
 
-(* checks whether the children are in a given list, or returns default
- * if o has no children *)
+(** checks whether the children are in a given list, or returns default
+ *  if o has no children *)
 let childreninlist (default:bool) (o:voperation) (l:voperation list) = 
 	match getchildren o with 
 		| [] -> default
 		| x -> List.for_all (fun o1 -> List.memq o1 l) x
 
-(* gets scheduling offset for o *)
+(** gets scheduling offset for o *)
 let operationoffset (o:voperation) = match o.operation with
 	| Unary (Cast,_,_) -> 0 (* cast is instant *)
 	| Unary (_,_,_)  
@@ -414,23 +421,24 @@ let operationoffset (o:voperation) = match o.operation with
 
 (* helper functions for manipulating vil objects *)
 
-let getentrypoint (f:funmodule) = List.find (fun m -> match m.minputs with
+(** gets the entry point to a function *)
+let getentrypoint (f:funmodule) = List.find (fun m -> match m.binputs with
 		| [{connectfrom=None;connectto=Some _;requires=None}] -> true
 		| _ -> false
 	) f.vblocks
 
 (* extracts module from an id *)
 let modulefromintoption (f:funmodule) (io:int option) = match io with
-	| Some i -> Some (List.find (fun m -> m.mid = i) f.vblocks)
+	| Some i -> Some (List.find (fun m -> m.bid = i) f.vblocks)
 	| None -> None
 
 (* gives a sucessor list *)
-let getmodulesucessors (f:funmodule) (m:vblock) :vblock list = 
-	Listutil.mapfilter (fun c -> modulefromintoption f c.connectto) m.moutputs
+let getblocksucessors (f:funmodule) (m:vblock) :vblock list = 
+	Listutil.mapfilter (fun c -> modulefromintoption f c.connectto) m.boutputs
 
 (* gives a predecessor list *)
 let getmodulepredecessors (f:funmodule) (m:vblock) :vblock list = 
-	Listutil.mapfilter (fun c -> modulefromintoption f c.connectfrom) m.minputs
+	Listutil.mapfilter (fun c -> modulefromintoption f c.connectfrom) m.binputs
 
 (* is variable v in list l ? (name equality)*)
 let variableinlist (v:vvarinfo) (l:vvarinfo list) = 
@@ -448,7 +456,7 @@ let hasvariableuse (v:vvarinfo) (m:vblock) =
 	List.exists (fun op -> match op.operation with
 			| Variable v1 when v1.varname = v.varname -> true
 			| _ -> false
-		) m.mdataFlowGraph
+		) m.bdataFlowGraph
 
 (* increment operation use count *)
 let incoperationcount (op:voperation) = 
@@ -473,7 +481,7 @@ let getswitches (m:vblock) =
 		| Some(o,_) when not (List.mem o !foundids) -> 
 			foundids := o :: ! foundids;
 			Some(o)
-		| _ -> None) m.moutputs)
+		| _ -> None) m.boutputs)
 
 (* get type of an operation *)
 let rec gettype (f:vvarinfo) (o:voperation) = match o.operation with
@@ -489,7 +497,7 @@ let functionname (f:funmodule) = f.vdesc.varname
 
 (* gets the latest scheduled item in a vblock *)
 let maxtime (m:vblock) = 
-	List.fold_left (fun a o -> max o.oschedule.set a) 0 m.mdataFlowGraph
+	List.fold_left (fun a o -> max o.oschedule.set a) 0 m.bdataFlowGraph
 
 (* code for filling in the schedule *)
 
@@ -531,14 +539,14 @@ let rec generatealap (latest:int) (acc:voperation list) (ops:voperation list) =
 (* generates an overall schedule for the module *)
 let rec generateschedule (m:vblock) =
 	List.iter (fun o -> o.oschedule <- (* TODO add non trivial scheduler *)
-	{earliest=o.oschedule.earliest;latest=o.oschedule.latest;set=o.oschedule.earliest}) m.mdataFlowGraph
+	{earliest=o.oschedule.earliest;latest=o.oschedule.latest;set=o.oschedule.earliest}) m.bdataFlowGraph
 
-(* generates schedules for all modules *)
+(* generates schedules for all blocks *)
 let generatescheduleinfo (f:funmodule) = 
 	List.iter (fun m -> 
-		generateasap [] m.mdataFlowGraph; 
+		generateasap [] m.bdataFlowGraph; 
 		generatealap (List.fold_left (fun a b -> max a b.oschedule.earliest) (* find max time *)
-			0 m.mdataFlowGraph) [] m.mdataFlowGraph;
+			0 m.bdataFlowGraph) [] m.bdataFlowGraph;
 		generateschedule m;
 	) f.vblocks
 

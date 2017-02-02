@@ -102,7 +102,7 @@ let feature =
     	" Set the output directory for verilog files. " ^
     	" Filenames will be the name of the synthesised functions");
     	("--cynthesis_average_loop_count",
-    	Arg.Set_int VI.averageloopcount,
+    	Arg.Set_int Cilanalyser.averageloopcount,
     	" Set the number of iterations assumed a loop executes, " ^
     	" (if analysis can't determine this)")
     ];

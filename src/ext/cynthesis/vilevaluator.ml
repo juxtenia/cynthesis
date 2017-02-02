@@ -8,7 +8,7 @@ module M = Matrixutil
 let operationcost o = operationoffset o
 
 let moduleoperationcost (m:vblock) = 
-	List.fold_left (fun t o -> t + operationcost o) 0 m.mdataFlowGraph
+	List.fold_left (fun t o -> t + operationcost o) 0 m.bdataFlowGraph
 
 let totaloperationcost (f:funmodule) = 
 	List.fold_left (fun t m -> t + moduleoperationcost m) 0 f.vblocks
@@ -19,8 +19,8 @@ let moduletime = maxtime
 (** generate balance equations for a function, solve and multiply 
  *  by the module time *)
 let weightedtimecost (f:funmodule) = 
-	f.vblocks <- List.sort (fun m1 m2 -> m1.mid - m2.mid) f.vblocks;
-	let ids = List.map (fun m -> m.mid) f.vblocks
+	f.vblocks <- List.sort (fun m1 m2 -> m1.bid - m2.bid) f.vblocks;
+	let ids = List.map (fun m -> m.bid) f.vblocks
 	in let size = List.length ids
 	in let m = M.create_m size size 
 	in let v = M.create_v size
@@ -33,12 +33,12 @@ let weightedtimecost (f:funmodule) =
 		List.iteri (fun i _ -> M.set_m m i i (-.1.)) ids; 
 		(* add connections with probability *)
 		List.iter (fun m1 -> 
-			let pos = Listutil.indexof m1.mid ids 
+			let pos = Listutil.indexof m1.bid ids 
 			in  List.iter (fun c -> match c with
 					| {connectto=Some t;probability=p;} -> 
 						M.set_m m pos (Listutil.indexof t ids) p
 					| _ -> ()
-				) m1.moutputs 
+				) m1.boutputs 
 		) f.vblocks;
 	let s = M.solveaxb m v
 	in  (* multiply by clock times in module *)
