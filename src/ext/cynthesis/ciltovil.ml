@@ -208,11 +208,23 @@ let ifconnection f s tt tf p =
   	{connectfrom = Some f; connectto = Some tf; 
   		requires = Some (s,false); probability=1.0-.p} :: []
 
+let getvblocktype (s:stmt):vblocktype = match s.skind with
+	| Instr (_) -> Instr
+	| Return (_,_) -> Return
+	| Goto (_,_)
+	| Break (_) 
+	| Continue (_) -> Goto
+	| If (_,_,_,_) -> If
+	| Loop (_,_,_,_) -> Loop
+	| Block (_) -> Block
+	| _ -> E.s (E.error "Illegal stmt %a.\n" d_stmt s) 
+
 (* generates a module from a Cil stmt *)
 let generatemodule (v:vvarinfo) (entryid:int) (s:stmt) :vblock = 
 	let ret = 
 	{
 		bid = s.sid;
+		btype = getvblocktype s;
 		binputs = [];
 		boutputs = [];
 		bvars = [];

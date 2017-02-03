@@ -1,3 +1,6 @@
+(** quick function to check if a list is empty *)
+let empty l = match l with | [] -> true | _ -> false
+
 (** Takes a function f:a' -> b' option
  *  and maps it to the list l:a' list
  *  keeping only the Some (_) results

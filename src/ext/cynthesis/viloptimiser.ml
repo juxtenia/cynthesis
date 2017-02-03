@@ -7,7 +7,7 @@ module E = Errormsg
 let generateconnections (m:funmodule) = List.iter 
 	(fun m1 -> List.iter 
 		(fun c ->
-			match modulefromintoption m c.connectto with
+			match blockfromintoption m c.connectto with
 				| Some m2 -> m2.binputs <- (c :: m2.binputs)
 				| None -> ()
 		) m1.boutputs
@@ -48,7 +48,7 @@ let rec compactblocks (acc:vblock list) (mods:vblock list) =
 
 (* removes unreachable block *)
 let rec removeunreachableblocks (mods:vblock list) = 
-	let (rm,kp) = List.partition (fun b -> List.length b.binputs = 0) mods
+	let (rm,kp) = List.partition (fun b -> Listutil.empty b.binputs) mods
 	in match rm with
 		| [] -> kp
 		| _ -> List.iter (fun b -> 
@@ -101,7 +101,7 @@ let pruneresults (f:funmodule) = List.iter
 			| _ -> true
 		) m.bdataFlowGraph) f.vblocks
 
-(* remove unused variables (caused by merging blocks) *)
+(* remove unused variables (caused by merging blocks, the cil optimiser, or dead source code) *)
 let variablecull (f:funmodule) = 
 	(* label appropriate variables *)
 	generatedataflow f;
@@ -118,7 +118,9 @@ let variablecull (f:funmodule) =
 		) f.vblocks
 	) f.vlocals;
 	(* do safety check to ensure variables at entry point are
-	 * inputs and not local variables *)
+	 * inputs and not local variables. Cil should have fixed
+	 * undefined local variables.
+	 *)
 	let entry = getentrypoint f 
 	in List.iter (fun v -> 
 			if variableinlist v f.vlocals

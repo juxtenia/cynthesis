@@ -1,6 +1,6 @@
 open Cil
 open Feature
-module VI = Vil
+open Vil
 module VA = Vast
 module E = Errormsg
 
@@ -38,20 +38,21 @@ let funtomodule (f:fundec) =
 	in  (* schedule *)
 		Vil.generatescheduleinfo ret;
 		(* dump module info *)
-		if(!printflags land 8 <> 0) then E.log("%s\n") (VI.string_of_funmodule ret) else ();
+		if(!printflags land 8 <> 0) then E.log("%s\n") (string_of_funmodule ret) else ();
 		(* print more readable module printout *)
-  		if(!printflags land 16 <> 0) then E.log("%s\n") (VI.print_funmodule ret) else ();
+  		if(!printflags land 16 <> 0) then E.log("%s\n") (print_funmodule ret) else ();
   		(* print optimiser metrics *)
-  		if(!printflags land 64 <> 0) then E.log("Opcost: %d, Timecost: %f\n") 
+  		if(!printflags land 64 <> 0) then E.log("Opcost: %d, Timecost: %f, Loops: [%s]\n") 
   			(Vilevaluator.totaloperationcost ret)
   			(Vilevaluator.weightedtimecost ret)
+  			(String.concat ", " (Listutil.mapfilter (Vilanalyser.loopinfo ret) ret.vblocks))
   			 else ();
 	let vret = Viltovast.vil_to_vast ret
 	in let vstring = VA.vastmodule_to_verilog vret
 	in  (* print verilog result *)
   		if(!printflags land 32 <> 0) then E.log("%s\n") vstring else ();
   		(* output verilog to file *)
-  		writestringtofile (getfilename (VI.functionname ret)) vstring
+  		writestringtofile (getfilename (functionname ret)) vstring
   		
 	
 (** entry point for Cynthesis, as used by cil*)
@@ -102,7 +103,7 @@ let feature =
     	" Set the output directory for verilog files. " ^
     	" Filenames will be the name of the synthesised functions");
     	("--cynthesis_average_loop_count",
-    	Arg.Set_int Cilanalyser.averageloopcount,
+    	Arg.Set_int Vilanalyser.averageloopcount,
     	" Set the number of iterations assumed a loop executes, " ^
     	" (if analysis can't determine this)")
     ];

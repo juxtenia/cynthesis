@@ -67,6 +67,8 @@ and vconnection = {
 and vblock = {
 	mutable bid: int;
 		(** The id of this module in the function *)
+	mutable btype: vblocktype;
+		(** The type of statement this was transcribed from *)
 	mutable bvars: vvarinfo list;
 		(** The variables inputed to this module *)
 	mutable bvarexports: vvarinfo list;
@@ -78,6 +80,14 @@ and vblock = {
 	mutable bdataFlowGraph: voperation list;
 		(** The data flow graph of operations *)
 }
+(** original type of this block, used to help with optimising *)
+and vblocktype = 
+	| Instr
+	| Return 
+	| Goto 
+	| If
+	| Loop 
+	| Block
 (** a link to a suboperation *)
 and voperationlink = 
 	| Simple of voperation
@@ -217,10 +227,20 @@ and string_of_vconnection c =
 and string_of_vconnection_list l = string_of_list_sq string_of_vconnection l
 and string_of_vblock m = 
 	"{ bid:" ^ string_of_int m.bid
+	^ ", btype:" ^ string_of_vblocktype m.btype
+	^ ", bvars:" ^ string_of_list_sq string_of_vvarinfo m.bvars
+	^ ", bvarexports:" ^ string_of_list_sq string_of_vvarinfo m.bvarexports
 	^ ", binputs:" ^ string_of_vconnection_list m.binputs
 	^ ", boutputs:" ^ string_of_vconnection_list m.boutputs
 	^ ", bdataFlowGraph:" ^ string_of_voperation_list m.bdataFlowGraph
 	^ "}"
+and string_of_vblocktype bt = match bt with
+	| Instr -> "Instr"
+	| Return -> "Return" 
+	| Goto -> "Goto" 
+	| If -> "If"
+	| Loop -> "Loop" 
+	| Block -> "Block"
 and string_of_vblock_list l = string_of_list_sq string_of_vblock l
 and string_of_voperationlink ol = match ol with
 	| Simple o -> "Simple:" ^ string_of_voperation o
@@ -276,6 +296,34 @@ let gettypeelement (t:vtype) = match t with
 	| Union (te,_) 
 		-> te
 
+(* the following functions check for equality between various types
+ * there are several pieces of information left out, if it's not deemed
+ * necessary to the equality test *)
+let eq_type (t1:vtype) (t2:vtype) = t1 = t2
+let eq_typeelement (te1:vtypeelement) (te2:vtypeelement) = te1 = te2
+let eq_compelement (ce1:vtypeelement) (ce2:vtypeelement) = ce1 = ce2
+let eq_unop (u1:unop) (u2:unop) = u1 = u2
+let eq_binop (b1:binop) (b2:binop) = b1 = b2
+let eq_complink (l1:vcomplink) (l2:vcomplink) = 
+	l1.loperation.oid = l2.loperation.oid &&
+	l1.lbase = l2.lbase && l2.lwidth = l2.lwidth
+let eq_operation_link (l1:voperationlink) (l2:voperationlink) = match (l1,l2) with
+	| (Simple o1, Simple o2) -> o1.oid = o2.oid
+	| (Compound ol1, Compound ol2) -> List.for_all2 eq_complink ol1 ol2
+	| _ -> false
+let eq_operation_type (ot1:voperationtype) (ot2:voperationtype) = 
+	match (ot1,ot2) with
+	| (Variable v1, Variable v2) when v1.varname = v2.varname -> true
+	| (Constant c1, Constant c2) when (eq_big_int c1.value c2.value && eq_type c1.ctype c2.ctype) -> true
+	| (Result (v1,b1,w1,o1), Result (v2,b2,w2,o2)) when v1.varname = v2.varname && eq_operation_link o1 o2 && b1=b2 && w1=w2-> true
+	| (Unary (u1,o1,t1), Unary (u2,o2,t2)) when eq_unop u1 u2 && eq_operation_link o1 o2 && eq_type t1 t2 -> true
+	| (Binary (b1,o11,o21,t1), Binary(b2,o12,o22,t2)) 
+		when eq_binop b1 b2 && eq_operation_link o11 o12 &&
+		eq_operation_link o21 o22 && eq_type t1 t2 -> true
+	| _ -> false
+let eq_operation (o1:voperation) (o2:voperation) = 
+	o1.oid = o2.oid && eq_operation_type o1.operation o2.operation
+
 (*  The following functions attempt to give a quick readable
  *  output from the various types, intented for console output
  *)
@@ -317,7 +365,7 @@ and print_vconnections (c:vconnection list) = match c with
 	)
 	| [{connectfrom=f1;connectto=tt;requires=Some(o1,true);probability=pt};
 		{connectfrom=f2;connectto=tf;requires=Some(o2,false);probability=pf}] 
-		when f1 = f2 || o1 = o2
+		when f1 = f2 && eq_operation_link o1 o2
 	-> "-> " ^ print_voperationlink o1 ^ " ? " ^ (match tt with 
 		| Some i -> (string_of_int i)
 		| None -> "return"
@@ -362,35 +410,6 @@ and print_vtypeelement te =
 and print_vcompelement ce = 
 	ce.ename ^ ":" ^ print_vtype ce.etype
 
-(* the following functions check for equality between various types
- * there are several pieces of information left out, if it's not deemed
- * necessary to the equality test *)
-let eq_type (t1:vtype) (t2:vtype) = t1 = t2
-let eq_typeelement (te1:vtypeelement) (te2:vtypeelement) = te1 = te2
-let eq_compelement (ce1:vtypeelement) (ce2:vtypeelement) = ce1 = ce2
-let eq_unop (u1:unop) (u2:unop) = u1 = u2
-let eq_binop (b1:binop) (b2:binop) = b1 = b2
-let eq_complink (l1:vcomplink) (l2:vcomplink) = 
-	l1.loperation.oid = l2.loperation.oid &&
-	l1.lbase = l2.lbase && l2.lwidth = l2.lwidth
-let eq_operation_link (l1:voperationlink) (l2:voperationlink) = match (l1,l2) with
-	| (Simple o1, Simple o2) -> o1 = o2
-	| (Compound ol1, Compound ol2) -> List.for_all2 eq_complink ol1 ol2
-	| _ -> false
-let eq_operation_type (ot1:voperationtype) (ot2:voperationtype) = 
-	match (ot1,ot2) with
-	| (Variable v1, Variable v2) when v1.varname = v2.varname -> true
-	| (Constant c1, Constant c2) when (eq_big_int c1.value c2.value && eq_type c1.ctype c2.ctype) -> true
-	| (Result (v1,b1,w1,o1), Result (v2,b2,w2,o2)) when v1.varname = v2.varname && eq_operation_link o1 o2 && b1=b2 && w1=w2-> true
-	| (Unary (u1,o1,t1), Unary (u2,o2,t2)) when eq_unop u1 u2 && eq_operation_link o1 o2 && eq_type t1 t2 -> true
-	| (Binary (b1,o11,o21,t1), Binary(b2,o12,o22,t2)) 
-		when eq_binop b1 b2 && eq_operation_link o11 o12 &&
-		eq_operation_link o21 o22 && eq_type t1 t2 -> true
-	| _ -> false
-let eq_operation (o1:voperation) (o2:voperation) = 
-	o1.oid = o2.oid && eq_operation_type o1.operation o2.operation
-
-
 (** gets the children from a link *)
 let getlinkchildren (l:voperationlink) = match l with
 	| Simple o -> [o]
@@ -428,18 +447,28 @@ let getentrypoint (f:funmodule) = List.find (fun m -> match m.binputs with
 	) f.vblocks
 
 (* extracts module from an id *)
-let modulefromintoption (f:funmodule) (io:int option) = 
+let blockfromint (f:funmodule) (i:int) = List.find (fun m -> m.bid = i) f.vblocks
+let blockfromintoption (f:funmodule) (io:int option) = 
 	match io with
-	| Some i -> Some (List.find (fun m -> m.bid = i) f.vblocks)
+	| Some i -> Some (blockfromint f i)
 	| None -> None
 
 (* gives a sucessor list *)
 let getblocksucessors (f:funmodule) (m:vblock) :vblock list = 
-	Listutil.mapfilter (fun c -> modulefromintoption f c.connectto) m.boutputs
+	Listutil.mapfilter (fun c -> blockfromintoption f c.connectto) m.boutputs
+
+(* gets all the sucessors of a block *)
+let getallsucessors (f:funmodule) (endv:int) (m:vblock) = 
+	let rec driver seen current = 
+		if current.bid = endv || List.mem current.bid seen 
+		then seen
+		else let newseen = current.bid::seen 
+			in List.fold_left (fun s n -> driver s n) newseen (getblocksucessors f current)
+	in driver [] m
 
 (* gives a predecessor list *)
 let getblockpredecessors (f:funmodule) (m:vblock) :vblock list = 
-	Listutil.mapfilter (fun c -> modulefromintoption f c.connectfrom) m.binputs
+	Listutil.mapfilter (fun c -> blockfromintoption f c.connectfrom) m.binputs
 
 (* is variable v in list l ? (name equality)*)
 let variableinlist (v:vvarinfo) (l:vvarinfo list) = 
@@ -452,12 +481,22 @@ let hasvariableresult (v:vvarinfo) (o:voperation list) =
 			| _ -> false
 		) o
 
-(* doesn m have a variable operation for v? *)
+(* does m have a variable operation for v? *)
 let hasvariableuse (v:vvarinfo) (m:vblock) = 
 	List.exists (fun op -> match op.operation with
 			| Variable v1 when v1.varname = v.varname -> true
 			| _ -> false
 		) m.bdataFlowGraph
+
+(* gets the value that v is set to, or None if not set to a constant *)
+let getconstvalue (v:vvarinfo) (m:vblock) =
+	match Listutil.mapfilter (fun op -> match op.operation with
+			| Result (v1,_,_,Simple{operation=Constant c}) when v1.varname = v.varname -> Some c.value
+			| _ -> None
+		) m.bdataFlowGraph
+	with 
+		| [c] -> Some c
+		| _ -> None
 
 (* increment operation use count *)
 let incoperationcount (op:voperation) = 
