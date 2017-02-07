@@ -168,12 +168,16 @@ let makeoperation (r:vastmodule) (v:vvarinfo) (m:vblock) (o:voperation) = match 
 		(refertooperation r m.bid o1))
 	| Binary(b,o1,o2,t) -> makeoperationregvariable r v m o (vil_to_vast_binop b 
 		(refertooperation r m.bid o1) (refertooperation r m.bid o2))
+	| Ternary(o1,o2,o3,t) -> makeoperationregvariable r v m o (TERNARY (
+		refertooperation r m.bid o1, refertooperation r m.bid o2, refertooperation r m.bid o3))
 
 let makeoperationwire (r:vastmodule) (v:vvarinfo) (m:vblock) (o:voperation) = match o.operation with
 	| Unary (u,o1,t) -> makeoperationwirevariable r v m o (vil_to_vast_unop u 
 		(refertooperation r m.bid o1))
 	| Binary(b,o1,o2,t) -> makeoperationwirevariable r v m o (vil_to_vast_binop b 
 		(refertooperation r m.bid o1) (refertooperation r m.bid o2))
+	| Ternary(o1,o2,o3,t) -> makeoperationwirevariable r v m o (TERNARY (
+		refertooperation r m.bid o1, refertooperation r m.bid o2, refertooperation r m.bid o3))
 	| ReturnValue _ 
 	| Result(_,_,_,_) 
 	| Variable _ 
@@ -185,7 +189,8 @@ let makeoperationlatchvariables (r:vastmodule) (v:vvarinfo) (m:vblock) (o:vopera
 	| Variable _ 
 	| Constant _
 	| Unary (_,_,_) 
-	| Binary(_,_,_,_) -> makeoperationwire r v m o
+	| Binary(_,_,_,_) 
+	| Ternary(_,_,_,_) -> makeoperationwire r v m o
 
 let makeanoperation (r:vastmodule) (v:vvarinfo) (m:vblock) (o:voperation) = 
 	if maxtime m = o.oschedule.set && List.exists (fun o1 -> o1.oid=o.oid) 

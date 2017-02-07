@@ -68,6 +68,8 @@ and duplicate_voperationtype ops ot = match ot with
 	| Unary (u,ol,t) -> Unary (duplicate_unop u, duplicate_voperationlink ops ol, duplicate_vtype t)
 	| Binary (b,ol1,ol2,t) -> Binary (duplicate_binop b, duplicate_voperationlink ops ol1, 
 		duplicate_voperationlink ops ol2, duplicate_vtype t)
+	| Ternary (ol1,ol2,ol3,t) -> Ternary (duplicate_voperationlink ops ol1, duplicate_voperationlink ops ol2,
+		duplicate_voperationlink ops ol3, duplicate_vtype t)
 and duplicate_vtype t = match t with
 	| Basic te -> Basic (duplicate_vtypeelement te)
 	| Struct (te,cel) -> Struct (duplicate_vtypeelement te, List.map duplicate_vcompelement cel)

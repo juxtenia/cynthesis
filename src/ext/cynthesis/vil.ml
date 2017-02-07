@@ -136,6 +136,9 @@ and voperationtype =
 		(** applies a unary operation to the previous item *)
 	| Binary of binop * voperationlink * voperationlink * vtype
 		(** applies a binary operation to the previous items *)  
+	| Ternary of voperationlink * voperationlink * voperationlink * vtype
+		(** multiplexes between the last two items, based on the nonzeroness 
+			of the first*)
 (** types for vil *)
 and vtype = 
 	| Basic of vtypeelement
@@ -271,6 +274,8 @@ and string_of_voperationtype vt = "{" ^ (match vt with
 		^ string_of_vtype t ^ ")" 
 	| Binary (u,o1,o2,t) -> "Binary:(" ^ string_of_binop u ^ ", " ^ string_of_voperationlink o1
 		^ ", " ^ string_of_voperationlink o2 ^ ", " ^ string_of_vtype t ^ ")" 
+	| Ternary (o1,o2,o3,t) -> "Ternary:(" ^ string_of_voperationlink o1 ^ ", " ^ string_of_voperationlink o2 
+		^ ", " ^ string_of_voperationlink o3 ^ ", " ^ string_of_vtype t ^ ")"
 	) ^ "}"
 and string_of_vtype t = "{" ^ (match t with
 	| Basic te -> "Basic:" ^ string_of_vtypeelement te
@@ -397,6 +402,8 @@ and print_voperationtype vt = match vt with
 		^ (print_vtype t) 
 	| Binary (u,o1,o2,t) -> print_voperationlink o1 ^ " " ^ print_binop u ^ " " ^ 
 		print_voperationlink o2 ^ ": " ^ print_vtype t
+	| Ternary(o1,o2,o3,t) -> "if " ^ print_voperationlink o1 ^ " then " ^ print_voperationlink o2
+		^ " else " ^ print_voperationlink o3 ^ ": " ^ print_vtype t
 and print_vscheduleinfo si = 
 	"@" ^ string_of_int si.set 
 	^ "(" ^ string_of_int si.earliest 
@@ -422,6 +429,7 @@ let getchildren (o:voperation) =
 	| ReturnValue o1 -> getlinkchildren o1
 	| Unary (_,o1,_) -> getlinkchildren o1
 	| Binary (_,o1,o2,_) -> (getlinkchildren o1) @ (getlinkchildren o2)
+	| Ternary (o1,o2,o3,_) -> (getlinkchildren o1) @ (getlinkchildren o2) @ (getlinkchildren o3)
 	| _ -> []
 
 (** checks whether the children are in a given list, or returns default
@@ -436,6 +444,7 @@ let operationoffset (o:voperation) = match o.operation with
 	| Unary (Cast,_,_) -> 0 (* cast is instant *)
 	| Unary (_,_,_)  
 	| Binary(_,_,_,_) -> 1 (* other operators take 1 step *)
+	| Ternary (_,_,_,_) -> 1 (* set to 1 for now *)
 	| _ -> 0 (* results, consts returnvalues and variables are instant *)
 
 (* helper functions for manipulating vil objects *)
@@ -539,7 +548,8 @@ let rec gettype (f:vvarinfo) (o:voperation) = match o.operation with
 	| Constant c -> c.ctype
 	| ReturnValue o1 -> f.vtype
 	| Unary (_,_,t) 
-	| Binary (_,_,_,t) -> t
+	| Binary (_,_,_,t)
+	| Ternary (_,_,_,t) -> t
 
 (* get the name of a function *)
 let functionname (f:funmodule) = f.vdesc.varname
@@ -604,6 +614,7 @@ let replaceoperations (reps :(voperation*voperationlink) list) (ops :voperation 
 			| Result (v,b,w,o1) -> Result(v,b,w,replacelink reps o1)
 			| Unary (u,o1,t) -> Unary(u,replacelink reps o1,t)
 			| Binary (b,o1,o2,t) -> Binary(b,replacelink reps o1, replacelink reps o2,t)
+			| Ternary (o1,o2,o3,t) -> Ternary(replacelink reps o1, replacelink reps o2, replacelink reps o3, t)
 			| _ -> o.operation
 		in o.operation <- op
 	) ops
