@@ -171,6 +171,13 @@ let basicloop (f:funmodule) (b:vblock) (loopdesc:(bool option) list) = match loo
 let loopinfo (f:funmodule) (b:vblock) = 
 	match loopdesc f b with
 	| [] -> None
-	| x -> Some (string_of_int b.bid ^ match basicloop f b x with
-		| Some i -> " basic(" ^ string_of_int i ^ ")"
-		| None -> "")
+	| x -> Some (
+		if isunsafeloop x then "infinite" 
+		else (string_of_int b.bid ^ match basicloop f b x with
+			| Some i -> " basic(" ^ string_of_int i ^ ")"
+			| None -> "")
+		)
+
+let inloopbody (f:funmodule) (idin:int) (idof:int) =
+	let b = blockfromint f idof
+	in List.mem idin (getallsucessors f idof b) && List.mem idin (getallsucessors f idof b)

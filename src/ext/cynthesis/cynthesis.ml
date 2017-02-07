@@ -34,9 +34,8 @@ let writestringtofile (file:string) (value:string) =
  *  before converting it into a vast module, turning that into a string, and 
  *  outputing it to the file with the same name as the function name *)
 let funtomodule (f:fundec) = 
-	let ret = Ciltovil.generatefunmodule f 
-	in  (* schedule *)
-		Vil.generatescheduleinfo ret;
+	let ret = Viloptimisationsteps.hillclimibingoptimiser (Ciltovil.generatefunmodule f)
+	in  
 		(* dump module info *)
 		if(!printflags land 8 <> 0) then E.log("%s\n") (string_of_funmodule ret) else ();
 		(* print more readable module printout *)
@@ -89,7 +88,9 @@ let feature =
   { fd_name = "cynthesis";
     fd_enabled = false;
     fd_extraopt = [("--cynthesis_print_flags",
-    	Arg.Set_int printflags,
+    	Arg.Int (fun i -> 
+    		Viloptimisationsteps.verbose := (i land 64 <>0); 
+    		printflags := i),
     	" Print flags for the cynthesis plugin\n" ^ padd ^
 		"   1 - Print code before cynthesis\n" ^ padd ^
 		"   2 - Print CFG info\n" ^ padd ^

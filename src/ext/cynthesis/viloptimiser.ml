@@ -1,19 +1,10 @@
 open Vil
+open Vilannotator
 module E = Errormsg
 
-(* straightening optimisation *)
+(* Straightening *)
 
-(* generate binputs for blocks *)
-let generateconnections (m:funmodule) = List.iter 
-	(fun m1 -> List.iter 
-		(fun c ->
-			match blockfromintoption m c.connectto with
-				| Some m2 -> m2.binputs <- (c :: m2.binputs)
-				| None -> ()
-		) m1.boutputs
-	) m.vblocks
-
-(* merge two blocks together *)
+(** merge two blocks together *)
 let mergeblocks (m1:vblock) (m2:vblock) = 
 	m1.boutputs <- m2.boutputs;
 	m1.bvarexports <- m2.bvarexports;
@@ -23,12 +14,12 @@ let mergeblocks (m1:vblock) (m2:vblock) =
 	(* return *)
 	m1
 
-(* merge block with redundant control flow *)
+(** merge block with redundant control flow *)
 let rec compactblocks (acc:vblock list) (mods:vblock list) =
 	match mods with
 	| [] -> acc
 	| h::t -> (match h.boutputs with
-		| [{connectfrom = Some cfrom; connectto = Some cto; requires = None}] ->
+		| [{connectfrom = Some cfrom; connectto = Some cto; requires = None}] when cfrom <> cto ->
 			let filt = (fun m -> m.bid = cto)
 			in let (it,rem,ac1) = if List.exists filt acc
 				then let (it1,ac2) = List.partition filt acc in (it1,t,ac2)
@@ -46,7 +37,7 @@ let rec compactblocks (acc:vblock list) (mods:vblock list) =
 
 (* Unreachable Code Removal *)
 
-(* removes unreachable block *)
+(** removes unreachable block *)
 let rec removeunreachableblocks (mods:vblock list) = 
 	let (rm,kp) = List.partition (fun b -> Listutil.empty b.binputs) mods
 	in match rm with
@@ -60,39 +51,7 @@ let rec removeunreachableblocks (mods:vblock list) =
 			) kp;
 			removeunreachableblocks kp
 
-
-(* Live Variable Analysis *)
-
-(* adds a variable to the inputs of a module and the 
- * outputs of predecessors, then checks predecessors
- * if they assign the variable stop, otherwise add to them
- *)
-let rec addvariable (f:funmodule) (m:vblock) (v:vvarinfo) = 
-	if variableinlist v m.bvars
-	then () 
-	else (
-		m.bvars <- v :: m.bvars;
-		List.iter (fun from -> 
-			(if variableinlist v from.bvarexports 
-			then () 
-			else from.bvarexports <- v :: from.bvarexports);
-			if List.exists (fun op -> match op.operation with
-				| Result (v1,_,_,_) when v1.varname = v.varname -> true
-				| _ -> false) from.bdataFlowGraph
-			then ()
-			else addvariable f from v 
-		) (getblockpredecessors f m)
-	)
-
-(* generate all variables in all blocks *)
-let generatedataflow (f:funmodule) = List.iter
-	(fun m -> List.iter 
-		(fun o -> match o.operation with
-				| Variable v -> addvariable f m v
-				| _ -> ()
-		) m.bdataFlowGraph) f.vblocks
-
-(* removes assignments to variables that are not used later *)
+(** removes assignments to variables that are not used later *)
 let pruneresults (f:funmodule) = List.iter
 	(fun m -> m.bdataFlowGraph <- List.filter
 		(fun o -> match o.operation with
@@ -101,7 +60,7 @@ let pruneresults (f:funmodule) = List.iter
 			| _ -> true
 		) m.bdataFlowGraph) f.vblocks
 
-(* remove unused variables (caused by merging blocks, the cil optimiser, or dead source code) *)
+(** remove unused variables (caused by merging blocks, the cil optimiser, or dead source code) *)
 let variablecull (f:funmodule) = 
 	(* label appropriate variables *)
 	generatedataflow f;
@@ -130,25 +89,13 @@ let variablecull (f:funmodule) =
 
 (* Dead Code elimination and duplicate operation removal *)
 
-(* build operation counts *)
-let rec dooperationcounts (cs:vconnection list) (ops:voperation list) = 
-	List.iter incchildren ops;
-	List.iter (fun o -> match o.operation with
-	| Result (_,_,_,_) 
-	| ReturnValue _ -> incoperationcount o
-	| _ -> ()) ops;
-	List.iter (fun c -> match c.requires with
-		| None -> ()
-		| Some (o,_) -> List.iter incoperationcount (getlinkchildren o)
-	) cs
-
-(* remove unreferenced ops, update children, repeat *)
+(** remove unreferenced ops, update children, repeat *)
 let rec pruneoperations (os:voperation list) =
 	if List.exists (fun o -> o.ousecount = 0) os
 	then pruneoperations (List.filter (fun o -> if o.ousecount = 0 then (decchildren o; false) else true) os)
 	else os
 
-(* removes duplicate operations *)
+(** removes duplicate operations *)
 let rec compactoperations (c:vconnection list) (acc:voperation list) 
 		(skip:voperation list) (ops:voperation list) = 
 	match ops with
@@ -168,8 +115,10 @@ let rec compactoperations (c:vconnection list) (acc:voperation list)
 				compactoperations c (h::acc) skip neqs
 		else compactoperations c acc (h::skip) t
 
-(* optimises away unecessary operations *)
+(** optimises away unecessary operations *)
 let culloperations (f:funmodule) = 
+	List.iter (fun m -> List.iter 
+		(fun o -> o.ousecount <- 0) m.bdataFlowGraph) f.vblocks;
 	List.iter (fun m -> 
 		dooperationcounts m.boutputs m.bdataFlowGraph) f.vblocks;
 	List.iter (fun m -> 
@@ -179,10 +128,13 @@ let culloperations (f:funmodule) =
 		m.bdataFlowGraph <- compactoperations m.boutputs [] [] m.bdataFlowGraph
 	) f.vblocks;;
 
-(* optimising entry point *)
+(** optimising entry point *)
 let optimisefunmodule (f:funmodule) = 
-		(* Generate connections. Adds all connections in 
-		 * bouputs to the appropriate module's binputs
+		(* inter block optimisations *)
+
+		(* Generate connections. Wipes existing connections 
+		 * (except entry points), then adds all connections 
+		 * in bouputs to the appropriate module's binputs
 		 *)
 		generateconnections f;
 		(* Straightening optimisation 
@@ -194,6 +146,8 @@ let optimisefunmodule (f:funmodule) =
 		 * and erase the connections from them in other modules
 		 *)
 		f.vblocks <- removeunreachableblocks f.vblocks;
+		(* intra block optimisations *)
+
 		(* Live variable analysis
 		 * annotates blocks with live variables,
 		 * removes unnecessary Result (_,_) labels and
