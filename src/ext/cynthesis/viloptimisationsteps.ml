@@ -3,32 +3,82 @@ open Vilevaluator
 module E = Errormsg
 
 let verbose = ref false
+let domoduleprint = ref false
 
 type optimisationtype =
 	| ConditionalExpansion
 
 type optimisation = {
-	bid: int;
+	blockid: int;
 	desc: optimisationtype;
 	apply: funmodule -> funmodule;
 }
 
+(** turns optimisationtype into a simple string representation *)
 let string_of_optimisationtype ot = match ot with
 	| ConditionalExpansion -> "ConditionalExpansion"
 
-let string_of_optimisation o = "(" ^ string_of_int o.bid ^ "," ^ string_of_optimisationtype o.desc ^ ")"
+(** turns optimisation into a simple string representation *)
+let string_of_optimisation o = "(" ^ string_of_int o.blockid ^ "," ^ string_of_optimisationtype o.desc ^ ")"
 
+(** true iff the given optimisation will duplicate loop body *)
 let isloopwideningtransform (o:optimisation) = match o.desc with
 	| _ -> false
 
+let getconditionalexpansions (f:funmodule) = Listutil.mapfilter (fun b ->
+	match b.boutputs with
+		| [{connectto=Some tt;requires=Some(olt,true);};{connectto=tf;requires=Some(olf,false);}] 
+			when eq_operation_link olt olf && let bt = blockfromint f tt
+			in List.length bt.binputs = 1 && 
+			(match bt.boutputs with
+				| [{connectto=t;requires=None}] when t = tf -> true
+				| _ -> false
+			)
+		-> Some {
+			blockid=b.bid;
+			desc=ConditionalExpansion;
+			apply=(fun (f:funmodule) -> 
+				let m = blockfromint f b.bid
+				in let mt = blockfromint f tt
+				in let sw = List.hd (getswitches m)
+				in  mt.bdataFlowGraph <- mergeparralleloperations f.vdesc sw mt.bdataFlowGraph [];
+					f.vblocks <- (Viloptimiser.mergeblocks m mt) :: 
+						(List.filter (fun b1 -> b1.bid <> b.bid && b1.bid <> tt) f.vblocks);
+					f
+			)
+		}
+		| [{connectto=tt;requires=Some(olt,true)};{connectto=Some tf;requires=Some(olf,false)}] 
+			when eq_operation_link olt olf && let bf = blockfromint f tf
+			in List.length bf.binputs = 1 && 
+			(match bf.boutputs with
+				| [{connectto=t;requires=None}] when t = tt -> true
+				| _ -> false
+			)
+		-> Some {
+			blockid=b.bid;
+			desc=ConditionalExpansion;
+			apply=(fun (f:funmodule) -> 
+				let m = blockfromint f b.bid
+				in let mf = blockfromint f tf
+				in let sw = List.hd (getswitches m)
+				in  mf.bdataFlowGraph <- mergeparralleloperations f.vdesc sw [] mf.bdataFlowGraph;
+					f.vblocks <- (Viloptimiser.mergeblocks m mf) :: 
+						(List.filter (fun b1 -> b1.bid <> b.bid && b1.bid <> tf) f.vblocks);
+					f
+			)
+		}
+		| _ -> None
+) f.vblocks
+
 (** Gives the possible optimisation steps for f *)
-let getpossibleoptimisations (f:funmodule) = [] (*TODO*)
+let getpossibleoptimisations (f:funmodule) = 
+	getconditionalexpansions f
 
 (** Gets the priority of one optimisation over another *)
 let getadvantage (f:funmodule) (o1:optimisation) (o2:optimisation) = 
 	0 
 	(* if o2 will duplicate loop body, of which o1 operates on, then probably to do o1 first *)
-	+ if isloopwideningtransform o2 && Vilanalyser.inloopbody f o1.bid o2.bid then 10 else 0
+	+ if isloopwideningtransform o2 && Vilanalyser.inloopbody f o1.blockid o2.blockid then 10 else 0
 
 let compareoptimisations (f:funmodule) (o1:optimisation) (o2:optimisation) = 
 	(getadvantage f o1 o2) - (getadvantage f o2 o1)
@@ -49,6 +99,7 @@ let timecostweight = 10.
 (** Evaluates how good a module is *)
 let evaluate (f:funmodule) = 
 	Vilannotator.generatescheduleinfo f;
+	Vilannotator.annotateloopprobabilities f;
 	let opcost = float_of_int (totaloperationcost f)
 	in let timecost = weightedtimecost f
 	in let totalcost = opcostweight *. opcost +. timecostweight *. timecost
@@ -62,8 +113,12 @@ let evaluate (f:funmodule) =
 
 (** Runs a hill climbing algorithm to attempt to improve f *)
 let rec hillclimibingoptimiser (f:funmodule) = 
-	 let value = evaluate f
-	 in let rec driver opts = match opts with
+	let value = evaluate f
+	in  if !domoduleprint
+			then E.log "%s\n" (print_funmodule f)
+			else ()
+		;
+	let rec driver opts = match opts with
 	 	| [] -> 
 	 		if !verbose 
 				then (E.log "No optimisations remain.\n") 
@@ -73,10 +128,10 @@ let rec hillclimibingoptimiser (f:funmodule) =
 	 	| h::t -> let imp = applyoptimisation (Vilcopy.duplicate f) h
 	 		in  Viloptimiser.optimisefunmodule imp;
 	 			if !verbose 
-					then (E.log "Applied %s\n" (string_of_optimisation h)) 
+					then E.log "Applied %s\n" (string_of_optimisation h)
 					else ()
 				;
-	 			if evaluate f > value 
+	 			if evaluate imp < value 
 	 			then (
 	 				if !verbose 
 						then (E.log "Keep optimisation. Recurse\n") 
@@ -84,6 +139,10 @@ let rec hillclimibingoptimiser (f:funmodule) =
 					;
 	 				hillclimibingoptimiser imp
 	 			) else (
+	 				if !domoduleprint
+						then E.log "%s\n" (print_funmodule imp)
+						else ()
+					;
 	 				if !verbose 
 						then (E.log "Discard optimisation. Continue\n") 
 						else ()

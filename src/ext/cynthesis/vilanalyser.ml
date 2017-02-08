@@ -168,6 +168,15 @@ let basicloop (f:funmodule) (b:vblock) (loopdesc:(bool option) list) = match loo
 					)
 			| _ -> None
 
+let getloopcount (f:funmodule) (b:vblock) =
+	match loopdesc f b with
+	| []
+	| [None] 
+	| _::_::_ -> None
+	| [Some b1] -> match basicloop f b [Some b1] with
+		| None -> Some (!averageloopcount,b1)
+		| Some i -> Some (i,b1)
+
 let loopinfo (f:funmodule) (b:vblock) = 
 	match loopdesc f b with
 	| [] -> None

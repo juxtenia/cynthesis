@@ -114,3 +114,19 @@ let rec dooperationcounts (cs:vconnection list) (ops:voperation list) =
 		| None -> ()
 		| Some (o,_) -> List.iter incoperationcount (getlinkchildren o)
 	) cs
+
+let setprobabilities (cs:vconnection list) (fs:float list) = 
+	List.iter2 (fun c f -> c.probability <- f) cs fs
+
+let loopprobabilitiesfromcount (c:int) (b:bool) = 
+	let (tl,nl) = match c with
+		| 0 -> (0.,1.)
+		| _ -> let cf = 1. /. (float_of_int c) in (1.-.cf,cf)
+	in if b then (tl,nl) else (nl,tl)
+
+let annotateloopprobabilities (f:funmodule) =
+	List.iter (fun b -> match Vilanalyser.getloopcount f b with
+		| None -> ()
+		| Some(c,b1) -> let (tp,fp) = loopprobabilitiesfromcount c b1
+			in setprobabilities b.boutputs [tp;fp]
+	) f.vblocks

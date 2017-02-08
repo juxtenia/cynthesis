@@ -15,6 +15,18 @@ let mapfilter f l =
 		)
 	in driver [] l
 
+(** Takes a function f:a' -> b' option
+ *  and gives back the the first time 
+ *  it returns Some (b) (returning the b)
+ *)
+let rec findfilter f l = match l with
+	| [] -> raise Not_found
+	| h::t -> (match f h with
+			| None -> findfilter f t
+			| Some b -> b
+		)
+
+
 (** takes a function a' -> b' list
  *  and maps it to the list l:a' list
  *  collecting the results together

@@ -1,6 +1,9 @@
 open Big_int
 module E = Errormsg
 
+(* id for operations, reset each time a function is synthesised *)
+let dataid = ref 0;;
+
 (** Unary Operations*)
 type unop =
   | Cast                                (** Cast expression*)
@@ -163,6 +166,12 @@ and vcompelement = {
 
 (** blank schedule to initialise with *)
 let emptyschedule = {earliest = 0; latest = 0; set = 0};;
+
+(** makes operation template from the type *)
+let makeoperation (ot:voperationtype) = 
+	let id = !dataid 
+	in 	dataid:= !dataid + 1;
+		{oid = id; operation = ot; ousecount = 0; oschedule=emptyschedule}
 
 (** The following functions produce a JSON like dump of all the 
  *  information inside any of the above data types. Since there are
@@ -506,6 +515,13 @@ let hasvariableuse (v:vvarinfo) (m:vblock) =
 			| _ -> false
 		) m.bdataFlowGraph
 
+(* does m have a return operation? *)
+let hasreturn (m:vblock) = 
+	List.exists (fun op -> match op.operation with
+			| ReturnValue _ -> true
+			| _ -> false
+		) m.bdataFlowGraph
+
 (* gets the value that v is set to, or None if not set to a constant *)
 let getconstvalue (v:vvarinfo) (m:vblock) =
 	match Listutil.mapfilter (fun op -> match op.operation with
@@ -536,7 +552,7 @@ let decchildren = dotoimmediatechildren decoperationcount;;
 let getswitches (m:vblock) = 
 	let foundids = ref []
 	in (Listutil.mapfilter (fun c -> match c.requires with
-		| Some(o,_) when not (List.mem o !foundids) -> 
+		| Some(o,_) when not (List.memq o !foundids) -> 
 			foundids := o :: ! foundids;
 			Some(o)
 		| _ -> None) m.boutputs)
@@ -647,3 +663,48 @@ let mergeoperations (o1:voperation list) (o2:voperation list) (c2:vconnection li
 		replaceconditions !replacements c2;
 		(* join the two together (rev_append is tail recursive) *)
 		List.rev_append first_half second_half
+
+let getpassthroughvariable (v:vvarinfo) = 
+	let varref = makeoperation (Variable v)
+	in let varres = makeoperation (Result (v,0,(gettypeelement v.vtype).width,Simple varref))
+	in [varres;varref]
+
+let addvariablesin (o1:voperation list) (o2:voperation list) =
+	List.rev_append o1 (List.flatten (Listutil.mapfilter (fun o -> match o.operation with
+		| Result(v,_,_,_) when not (hasvariableresult v o1)-> Some (getpassthroughvariable v)
+		| _ -> None) o2))
+
+
+let valueof (v:vvarinfo) (o1:voperation list) = 
+	Listutil.findfilter (fun o -> match o.operation with 
+			| Result(v1,_,_,o) when v1.varname = v.varname -> Some o
+			| _ -> None
+		) o1
+
+let returnvalue (o1:voperation list) = 
+	Listutil.findfilter (fun o -> match o.operation with 
+			| ReturnValue o -> Some o
+			| _ -> None
+		) o1
+
+let mergeparralleloperations (returnvar:vvarinfo) (ol:voperationlink) (iot:voperation list) (iof:voperation list) =
+	(* make both sides have same result tags *)
+	let rot = addvariablesin iot iof
+	in let rof = addvariablesin iof iot
+	in let sw = List.fold_left (fun swc o -> match o.operation with 
+			| Result(v,b,w,o1) -> let tern = makeoperation (Ternary (ol,o1,valueof v rof,v.vtype))
+				in let ternres = {oid=o.oid;ousecount=0;
+					oschedule=emptyschedule;operation=Result(v,b,w,Simple tern)}
+				in ternres :: tern :: swc
+			| ReturnValue(o1) -> let tern = makeoperation (Ternary (ol,o1,returnvalue rof,returnvar.vtype))
+				in let ternret = {oid=o.oid;ousecount=0;
+					oschedule=emptyschedule;operation=ReturnValue (Simple tern)}
+				in ternret :: tern :: swc
+			| _ -> swc
+		) [] rot
+	in let nores = List.filter(fun o -> match o.operation with 
+		| Result(_,_,_,_) -> false
+		| _ -> true )
+	in let nrot = nores rot
+	in let nrof = nores rof
+	in List.rev_append (List.rev_append nrot sw) nrof

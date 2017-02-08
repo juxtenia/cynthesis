@@ -2,9 +2,6 @@ open Big_int
 open Vil
 open Cil
 
-(* id for operations, reset each time a function is synthesised *)
-let dataid = ref 0;;
-
 (* gives whether a type is signed *)
 let rec typesigned (t:typ) :bool = match t with
 	| TInt(ik,_) -> isSigned ik
@@ -115,11 +112,6 @@ let rec generateconstant (c:constant) :vconstinfo = match c with
 
 (* generates a list of vvarinfo from a list of Cil varinfo *)
 let generatevariables :varinfo list -> vvarinfo list = List.map generatevariable 
-
-let makeoperation (ot:voperationtype) = 
-	let id = !dataid 
-	in 	dataid:= !dataid + 1;
-		{oid = id; operation = ot; ousecount = 0; oschedule=emptyschedule}
 
 let getvarrange (v:varinfo) (o:offset) (lv:lval) = 
 	let rec driver b t o1 = match o1 with

@@ -34,7 +34,9 @@ let writestringtofile (file:string) (value:string) =
  *  before converting it into a vast module, turning that into a string, and 
  *  outputing it to the file with the same name as the function name *)
 let funtomodule (f:fundec) = 
-	let ret = Viloptimisationsteps.hillclimibingoptimiser (Ciltovil.generatefunmodule f)
+	let fmod = Ciltovil.generatefunmodule f
+	in  Viloptimiser.optimisefunmodule fmod;
+	let ret = Viloptimisationsteps.hillclimibingoptimiser fmod
 	in  
 		(* dump module info *)
 		if(!printflags land 8 <> 0) then E.log("%s\n") (string_of_funmodule ret) else ();
@@ -90,6 +92,7 @@ let feature =
     fd_extraopt = [("--cynthesis_print_flags",
     	Arg.Int (fun i -> 
     		Viloptimisationsteps.verbose := (i land 64 <>0); 
+    		Viloptimisationsteps.domoduleprint := (i land 128 <>0); 
     		printflags := i),
     	" Print flags for the cynthesis plugin\n" ^ padd ^
 		"   1 - Print code before cynthesis\n" ^ padd ^
@@ -98,7 +101,8 @@ let feature =
 		"   8 - Dump all info about resulting module\n" ^ padd ^
 		"  16 - Print resulting module\n" ^ padd ^
     	"  32 - Print resulting verilog\n" ^ padd ^ 
-    	"  64 - Print what the optimiser is doing");
+    	"  64 - Print what the optimiser is doing\n" ^ padd ^ 
+    	" 128 - Print module after each optimisation step");
     	("--cynthesis_output_dir",
     	Arg.Set_string outputdir,
     	" Set the output directory for verilog files. " ^
