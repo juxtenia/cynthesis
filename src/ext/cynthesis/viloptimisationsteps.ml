@@ -22,7 +22,7 @@ let string_of_optimisationtype ot = match ot with
 (** turns optimisation into a simple string representation *)
 let string_of_optimisation o = "(" ^ string_of_int o.blockid ^ "," ^ string_of_optimisationtype o.desc ^ ")"
 
-(** true iff the given optimisation will duplicate loop body *)
+(** true iff the given optimisation will clone loop body *)
 let isloopwideningtransform (o:optimisation) = match o.desc with
 	| _ -> false
 
@@ -80,7 +80,7 @@ let getpossibleoptimisations (f:funmodule) =
 (** Gets the priority of one optimisation over another *)
 let getadvantage (f:funmodule) (o1:optimisation) (o2:optimisation) = 
 	o1.estimatedvalue
-	(* if o2 will duplicate loop body, of which o1 operates on, then probably to do o1 first *)
+	(* if o2 will clone loop body, of which o1 operates on, then probably to do o1 first *)
 	+ if isloopwideningtransform o2 && Vilanalyser.inloopbody f o1.blockid o2.blockid then 1000 else 0
 
 let compareoptimisations (f:funmodule) (o1:optimisation) (o2:optimisation) = 
@@ -129,7 +129,7 @@ let hillclimibingoptimiser (fm:funmodule) =
 					else ()
 				;
 	 			f
-	 		| h::t -> let imp = applyoptimisation (Vilcopy.duplicate f) h
+	 		| h::t -> let imp = applyoptimisation (Vilcopy.clone f) h
 		 		in  Viloptimiser.optimisefunmodule imp;
 	 				if !verbose 
 						then E.log "Applied %s\n" (string_of_optimisation h)
