@@ -167,11 +167,12 @@ and vcompelement = {
 (** blank schedule to initialise with *)
 let emptyschedule = {earliest = 0; latest = 0; set = 0};;
 
+let getnewid () = let id = !dataid 
+	in 	dataid:= !dataid + 1; id
+
 (** makes operation template from the type *)
 let makeoperation (ot:voperationtype) = 
-	let id = !dataid 
-	in 	dataid:= !dataid + 1;
-		{oid = id; operation = ot; ousecount = 0; oschedule=emptyschedule}
+		{oid = getnewid (); operation = ot; ousecount = 0; oschedule=emptyschedule}
 
 (** The following functions produce a JSON like dump of all the 
  *  information inside any of the above data types. Since there are
