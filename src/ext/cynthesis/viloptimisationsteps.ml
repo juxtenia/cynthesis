@@ -11,6 +11,7 @@ type optimisationtype =
 type optimisation = {
 	blockid: int;
 	desc: optimisationtype;
+	estimatedvalue: int;
 	apply: funmodule -> funmodule;
 }
 
@@ -37,6 +38,7 @@ let getconditionalexpansions (f:funmodule) = Listutil.mapfilter (fun b ->
 		-> Some {
 			blockid=b.bid;
 			desc=ConditionalExpansion;
+			estimatedvalue=moduletime (blockfromint f tt);
 			apply=(fun (f:funmodule) -> 
 				let m = blockfromint f b.bid
 				in let mt = blockfromint f tt
@@ -57,6 +59,7 @@ let getconditionalexpansions (f:funmodule) = Listutil.mapfilter (fun b ->
 		-> Some {
 			blockid=b.bid;
 			desc=ConditionalExpansion;
+			estimatedvalue=moduletime (blockfromint f tf);
 			apply=(fun (f:funmodule) -> 
 				let m = blockfromint f b.bid
 				in let mf = blockfromint f tf
@@ -76,9 +79,9 @@ let getpossibleoptimisations (f:funmodule) =
 
 (** Gets the priority of one optimisation over another *)
 let getadvantage (f:funmodule) (o1:optimisation) (o2:optimisation) = 
-	0 
+	o1.estimatedvalue
 	(* if o2 will duplicate loop body, of which o1 operates on, then probably to do o1 first *)
-	+ if isloopwideningtransform o2 && Vilanalyser.inloopbody f o1.blockid o2.blockid then 10 else 0
+	+ if isloopwideningtransform o2 && Vilanalyser.inloopbody f o1.blockid o2.blockid then 1000 else 0
 
 let compareoptimisations (f:funmodule) (o1:optimisation) (o2:optimisation) = 
 	(getadvantage f o1 o2) - (getadvantage f o2 o1)
@@ -99,7 +102,6 @@ let timecostweight = 10.
 (** Evaluates how good a module is *)
 let evaluate (f:funmodule) = 
 	Vilannotator.generatescheduleinfo f;
-	Vilannotator.annotateloopprobabilities f;
 	let opcost = float_of_int (totaloperationcost f)
 	in let timecost = weightedtimecost f
 	in let totalcost = opcostweight *. opcost +. timecostweight *. timecost
@@ -112,41 +114,45 @@ let evaluate (f:funmodule) =
 	
 
 (** Runs a hill climbing algorithm to attempt to improve f *)
-let rec hillclimibingoptimiser (f:funmodule) = 
-	let value = evaluate f
-	in  if !domoduleprint
+let hillclimibingoptimiser (fm:funmodule) = 
+	Viloptimiser.optimisefunmodule fm;
+	Vilannotator.annotateloopprobabilities fm;
+	let rec driver f v =
+		if !domoduleprint
 			then E.log "%s\n" (print_funmodule f)
 			else ()
 		;
-	let rec driver opts = match opts with
-	 	| [] -> 
-	 		if !verbose 
-				then (E.log "No optimisations remain.\n") 
-				else ()
-			;
-	 		f
-	 	| h::t -> let imp = applyoptimisation (Vilcopy.duplicate f) h
-	 		in  Viloptimiser.optimisefunmodule imp;
-	 			if !verbose 
-					then E.log "Applied %s\n" (string_of_optimisation h)
+		let rec iterate opts = match opts with
+	 		| [] -> 
+		 		if !verbose 
+					then (E.log "No optimisations remain.\n") 
 					else ()
 				;
-	 			if evaluate imp < value 
-	 			then (
+	 			f
+	 		| h::t -> let imp = applyoptimisation (Vilcopy.duplicate f) h
+		 		in  Viloptimiser.optimisefunmodule imp;
 	 				if !verbose 
-						then (E.log "Keep optimisation. Recurse\n") 
+						then E.log "Applied %s\n" (string_of_optimisation h)
 						else ()
 					;
-	 				hillclimibingoptimiser imp
-	 			) else (
-	 				if !domoduleprint
-						then E.log "%s\n" (print_funmodule imp)
-						else ()
-					;
-	 				if !verbose 
-						then (E.log "Discard optimisation. Continue\n") 
-						else ()
-					;
-					driver t
-				)
-	 in driver (orderoptimisations f (getpossibleoptimisations f))
+				let impv = evaluate imp
+	 			in  if impv < v 
+	 				then (
+		 				if !verbose 
+							then (E.log "Keep optimisation. Recurse\n") 
+							else ()
+						;
+	 					driver imp impv
+	 				) else (
+		 				if !domoduleprint
+							then E.log "%s\n" (print_funmodule imp)
+							else ()
+						;
+	 					if !verbose 
+							then (E.log "Discard optimisation. Continue\n") 
+							else ()
+						;
+						iterate t
+					)
+	 	in iterate (orderoptimisations f (getpossibleoptimisations f))
+	 in driver fm (evaluate fm)

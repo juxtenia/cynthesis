@@ -34,9 +34,7 @@ let writestringtofile (file:string) (value:string) =
  *  before converting it into a vast module, turning that into a string, and 
  *  outputing it to the file with the same name as the function name *)
 let funtomodule (f:fundec) = 
-	let fmod = Ciltovil.generatefunmodule f
-	in  Viloptimiser.optimisefunmodule fmod;
-	let ret = Viloptimisationsteps.hillclimibingoptimiser fmod
+	let ret = Viloptimisationsteps.hillclimibingoptimiser (Ciltovil.generatefunmodule f)
 	in  
 		(* dump module info *)
 		if(!printflags land 8 <> 0) then E.log("%s\n") (string_of_funmodule ret) else ();
