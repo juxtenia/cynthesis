@@ -629,10 +629,12 @@ let replaceoperations (reps :(voperation*voperationlink) list) (ops :voperation 
 	(fun o -> let op = 
 		match o.operation with
 			| Result (v,b,w,o1) -> Result(v,b,w,replacelink reps o1)
+			| ReturnValue o1 -> ReturnValue (replacelink reps o1)
 			| Unary (u,o1,t) -> Unary(u,replacelink reps o1,t)
 			| Binary (b,o1,o2,t) -> Binary(b,replacelink reps o1, replacelink reps o2,t)
 			| Ternary (o1,o2,o3,t) -> Ternary(replacelink reps o1, replacelink reps o2, replacelink reps o3, t)
-			| _ -> o.operation
+			| Variable _
+			| Constant _ -> o.operation
 		in o.operation <- op
 	) ops
 
