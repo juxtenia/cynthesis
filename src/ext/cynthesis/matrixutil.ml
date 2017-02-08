@@ -129,8 +129,10 @@ let solvediagonalised m v =
 				if i >= j then t
 				else summer (t +. (get_m m i j) *. (get_v ret i)) (i + 1)
 			in  if j >= ret.l then ret
-				else (set_v ret j ((summer (-.(get_v v j)) 0)/. -.(get_m m j j));
-					driver (j+1) )
+				else (set_v ret j (if get_m m j j = 0.
+						then 0. 
+						else ((summer (-.(get_v v j)) 0)/. -.(get_m m j j))
+					); driver (j+1) )
 		in driver 0
 	else raise (Invalid_argument "matrix dimensions must be equal and agree with vector")
 
