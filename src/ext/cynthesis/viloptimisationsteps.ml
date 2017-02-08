@@ -7,6 +7,7 @@ let domoduleprint = ref false
 
 type optimisationtype =
 	| ConditionalExpansion
+	| LoopFlatten
 
 type optimisation = {
 	blockid: int;
@@ -18,12 +19,14 @@ type optimisation = {
 (** turns optimisationtype into a simple string representation *)
 let string_of_optimisationtype ot = match ot with
 	| ConditionalExpansion -> "ConditionalExpansion"
+	| LoopFlatten -> "LoopFlatten"
 
 (** turns optimisation into a simple string representation *)
 let string_of_optimisation o = "(" ^ string_of_int o.blockid ^ "," ^ string_of_optimisationtype o.desc ^ ")"
 
 (** true iff the given optimisation will clone loop body *)
 let isloopwideningtransform (o:optimisation) = match o.desc with
+	| LoopFlatten -> true
 	| _ -> false
 
 let getconditionalexpansions (f:funmodule) = Listutil.mapfilter (fun b ->
@@ -57,10 +60,10 @@ let getconditionalexpansions (f:funmodule) = Listutil.mapfilter (fun b ->
 				| _ -> false
 			)
 		-> Some {
-			blockid=b.bid;
-			desc=ConditionalExpansion;
-			estimatedvalue=moduletime (blockfromint f tf);
-			apply=(fun (f:funmodule) -> 
+			blockid = b.bid;
+			desc = ConditionalExpansion;
+			estimatedvalue = moduletime (blockfromint f tf);
+			apply = (fun (f:funmodule) -> 
 				let m = blockfromint f b.bid
 				in let mf = blockfromint f tf
 				in let sw = List.hd (getswitches m)
@@ -73,9 +76,64 @@ let getconditionalexpansions (f:funmodule) = Listutil.mapfilter (fun b ->
 		| _ -> None
 ) f.vblocks
 
+let swap f t i = match i with
+	| None -> None
+	| Some j when j = f -> Some t
+	| Some j -> Some j
+
+let getloopflattens (f:funmodule) = Listutil.mapfilter (fun b -> 
+	match Vilanalyser.loopdesc f b with
+		| []
+		| [None] 
+		| _::_::_ -> None
+		| [Some b1] -> (match Vilanalyser.basicloop f b [Some b1] with
+			| None -> None
+			| Some i -> Some {
+				blockid = b.bid;
+				desc = LoopFlatten;
+				estimatedvalue = i;
+				apply = (fun (f:funmodule) -> 
+					let block = blockfromint f b.bid 
+					in let (lb,eb) = match getblocksucessors f block with
+						| [t;f] -> if b1 then (t,f) else (f,t)
+						| _ -> E.s (E.error "Boutputs doesn't match expected form")
+					in  block.boutputs <- 
+						{connectfrom=Some block.bid;connectto=Some lb.bid;requires=None;probability=1.;}::[];
+					let loopblockids = block.bid :: (getallsucessors f block.bid lb)
+					in let loopblocks = List.map (blockfromint f) loopblockids
+					in let remblocks = List.filter (fun b -> not (List.mem b.bid loopblockids)) f.vblocks
+					in let rec driver bs j = if j >= i then bs 
+						else 
+							let (m,ds) = Vilcopy.duplicate (bs @ loopblocks) loopblocks
+							in  List.iter (fun b -> 
+									List.iter (fun c -> 
+										c.connectto <- swap block.bid (block.bid + m) c.connectto
+									) b.boutputs) bs;
+								List.iter (fun b -> 
+									List.iter (fun c -> 
+										c.connectto <- swap (block.bid + m) block.bid c.connectto
+									) b.boutputs) ds;
+								driver (ds @ bs) (j+1)
+					in  f.vblocks <- driver remblocks 0;
+						List.iter (fun b -> 
+							List.iter (fun c -> 
+								c.connectto <- swap block.bid eb.bid c.connectto
+							) b.boutputs) f.vblocks;
+						f
+				);
+			}
+		)
+) f.vblocks
+
 (** Gives the possible optimisation steps for f *)
 let getpossibleoptimisations (f:funmodule) = 
-	getconditionalexpansions f
+	List.flatten
+	[ 
+		getconditionalexpansions f;
+		getloopflattens f;
+	]
+
+
 
 (** Gets the priority of one optimisation over another *)
 let getadvantage (f:funmodule) (o1:optimisation) (o2:optimisation) = 
@@ -130,7 +188,11 @@ let hillclimibingoptimiser (fm:funmodule) =
 				;
 	 			f
 	 		| h::t -> let imp = applyoptimisation (Vilcopy.clone f) h
-		 		in  Viloptimiser.optimisefunmodule imp;
+		 		in  if !domoduleprint
+						then E.log "%s\n" (print_funmodule imp)
+						else ()
+					;
+					Viloptimiser.optimisefunmodule imp;
 	 				if !verbose 
 						then E.log "Applied %s\n" (string_of_optimisation h)
 						else ()

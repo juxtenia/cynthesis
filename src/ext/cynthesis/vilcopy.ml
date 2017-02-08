@@ -111,7 +111,7 @@ and duplicate_vblocks all bs =
 				c.connectto <- swap c.connectto;
 				c.connectfrom <- swap c.connectfrom
 			) b.boutputs) ret;
-		ret
+		(max,ret)
 and duplicate_vvarinfo v = clone_vvarinfo v
 and duplicate_vconstinfo c = clone_vconstinfo c
 and duplicate_vconnection c = {
@@ -153,7 +153,7 @@ and duplicate_voperation o =
 		oid = id;
 		operation = o.operation; (* This is fixed afterwards! *)
 		ousecount = o.ousecount;
-		oschedule = duplicate_vscheduleinfo o.oschedule;
+		oschedule = emptyschedule;
 	})
 and duplicate_vscheduleinfo s = s (* this isn't mutable! *)
 and duplicate_voperationtype reps ops ot = match ot with
