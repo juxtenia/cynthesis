@@ -131,10 +131,13 @@ let rec makedataflow (e:exp) :(voperation list * voperationlink) =
 	match e with
 		| Const c -> ([], Simple (makeoperation (Constant (generateconstant c))))
   		| Lval l -> (match l with
-  			| (Var(v),NoOffset) -> ([], Simple (makeoperation (Variable (generatevariable v))))
+  			| (Var(v),NoOffset) -> 
+  				let var = makeoperation (Variable (generatevariable v)) 
+  				in ([], Simple var)
   			| (Var(v),o) -> let (b,w) = getvarrange v o l
+  				in let var = makeoperation (Variable (generatevariable v)) 
   				in ([], Compound [{
-  					loperation=(makeoperation (Variable (generatevariable v)));
+  					loperation=var;
   					lbase=b;
   					lwidth=w; }])
   			| _ -> E.s (E.error "Illegal lvalue %a\n" d_lval l)
@@ -162,19 +165,20 @@ let overwritevariable (v:vvarinfo) (b:int) (w:int) (ol:voperationlink) =
 	in let biddle = match ol with
 		| Simple o -> [{lbase=0;lwidth=w;loperation=o;}]
 		| Compound cll -> getrange 0 w cll
-	in Compound (initial @ biddle @ terminal)
+	in (op,Compound (initial @ biddle @ terminal))
 
 let generateset (lv:lval) (e:exp) :voperation list =
 	let (ops,reslink) = makedataflow e 
-	in let resulttype = match lv with
+	in let (extra,resulttype) = match lv with
 		| (Var(v),NoOffset) -> let v1 = generatevariable v
-			in Result (v1,0,(gettypeelement v1.vtype).width,reslink)
+			in ([],Result (v1,0,(gettypeelement v1.vtype).width,reslink))
 		| (Var(v),o) -> let v1 = generatevariable v
 			in let (b,w) = getvarrange v o lv
-			in Result (v1,0,(gettypeelement v1.vtype).width, overwritevariable v1 b w reslink)
+			in let (op,ovwr) = overwritevariable v1 b w reslink
+			in ([op],Result (v1,0,(gettypeelement v1.vtype).width, ovwr))
 		| _ -> E.s (E.error "Illegal lvalue %a.\n" d_lval lv)
 	in let result = makeoperation resulttype
-	in result :: ops
+	in  result :: (List.rev_append extra ops)
 
 (* generates operations from a list of Cil instr *)
 let rec makeinstrlist (m:vblock) (il:instr list) =
@@ -292,7 +296,5 @@ let generatefunmodule (f:fundec) :funmodule =
 		vlocals = generatevariables f.slocals;
 		vblocks = List.map (generatemodule vardesc entryid) f.sallstmts;
 	}
-	in  (* run optimisation pass *)
-		Viloptimiser.optimisefunmodule ret;
-		(* return *)
+	in  (* return *)
 		ret

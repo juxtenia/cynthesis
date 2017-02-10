@@ -170,10 +170,6 @@ let emptyschedule = {earliest = 0; latest = 0; set = 0};;
 let getnewid () = let id = !dataid 
 	in 	dataid:= !dataid + 1; id
 
-(** makes operation template from the type *)
-let makeoperation (ot:voperationtype) = 
-		{oid = getnewid (); operation = ot; ousecount = 0; oschedule=emptyschedule}
-
 (** The following functions produce a JSON like dump of all the 
  *  information inside any of the above data types. Since there are
  *  typically multiple references to certain items within blocks,
@@ -183,6 +179,9 @@ let string_of_list lp rp sf fl = lp ^ (String.concat ", " (List.map sf fl)) ^ rp
 let string_of_list_sq sf fl = string_of_list "[" "]" sf fl
 let string_of_list_cl sf fl = string_of_list "{" "}" sf fl
 let string_of_list_pr sf fl = string_of_list "(" ")" sf fl
+
+let opids ops = string_of_list_sq (fun o -> string_of_int o.oid) ops
+let blockids bs = string_of_list_sq (fun b -> string_of_int b.bid) bs
 
 let rec string_of_unop u = match u with
   | Neg -> "Neg"
@@ -402,7 +401,7 @@ and print_voperationlink ol = match ol with
 	| Compound ol -> string_of_list_cl print_vcomplink ol
 and print_vcomplink vl = "<" ^ string_of_int vl.loperation.oid ^ ">[" 
 	^ string_of_int (vl.lbase+vl.lwidth-1)
-	^ string_of_int vl.lbase ^ "]"
+	^ ":" ^ string_of_int vl.lbase ^ "]"
 and print_voperationtype vt = match vt with
 	| Variable v -> print_vvarinfo v
 	| Constant c -> print_vconstinfo c
@@ -426,6 +425,10 @@ and print_vtypeelement te =
 	(string_of_int te.width) ^ "'" ^ if te.isSigned then "s" else "u"
 and print_vcompelement ce = 
 	ce.ename ^ ":" ^ print_vtype ce.etype
+
+(** makes operation template from the type *)
+let makeoperation (ot:voperationtype) = 
+	{oid = getnewid (); operation = ot; ousecount = 0; oschedule=emptyschedule}
 
 (** gets the children from a link *)
 let getlinkchildren (l:voperationlink) = match l with
@@ -625,7 +628,8 @@ let replaceconditions (reps :(voperation*voperationlink) list) (cs:vconnection l
 	) cs
 
 (* replace operations in the sub trees of operations in the list *)
-let replaceoperations (reps :(voperation*voperationlink) list) (ops :voperation list) = List.iter 
+let replaceoperations (reps :(voperation*voperationlink) list) (ops :voperation list) = 
+	List.iter 
 	(fun o -> let op = 
 		match o.operation with
 			| Result (v,b,w,o1) -> Result(v,b,w,replacelink reps o1)

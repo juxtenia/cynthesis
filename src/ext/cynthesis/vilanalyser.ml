@@ -190,3 +190,84 @@ let loopinfo (f:funmodule) (b:vblock) =
 let inloopbody (f:funmodule) (idin:int) (idof:int) =
 	let b = blockfromint f idof
 	in List.mem idin (getallsucessors f idof b) && List.mem idin (getallsucessors f idof b)
+
+let constchildren (o:voperation) = match o.operation with
+	| Variable _
+	| Constant _
+	| Result (_,_,_,_) 
+	| ReturnValue _ -> false
+	| _ -> List.for_all (fun o1 -> match o1.operation with
+			| Constant _ -> true
+			| _ -> false) (getchildren o)
+
+let rec positivise c t = if lt_big_int c zero_big_int 
+		then positivise (add_big_int c (shift_left_big_int unit_big_int t.width)) t
+		else c
+
+let normalisewidth (c:big_int) (t:vtypeelement) = 
+	let widthshift = shift_left_big_int unit_big_int t.width
+	in and_big_int (sub_big_int widthshift unit_big_int) (positivise c t)
+
+let normalisesignwidth (c:big_int) (t:vtypeelement) = 
+	let nwidth = normalisewidth c t
+	in  if t.isSigned && ge_big_int nwidth (shift_left_big_int unit_big_int (t.width - 1))
+		then sub_big_int nwidth (shift_left_big_int unit_big_int t.width)
+		else nwidth
+
+let constfromoperationlink (ol:voperationlink) = match ol with
+	| Simple {operation=Constant c} -> c.value
+	| Simple _ -> raise (Invalid_argument "Not constant children")
+	| Compound cll -> let consts = List.map (fun cl -> match cl.loperation.operation with
+			| Constant c -> (cl.lbase,cl.lwidth,normalisewidth c.value (gettypeelement c.ctype))
+			| _ -> raise (Invalid_argument "Not constant children")) cll
+		in let constsranged = List.map (fun (b,w,c) -> 
+			(w, and_big_int (sub_big_int (shift_left_big_int unit_big_int w) unit_big_int) 
+				(shift_right_big_int c b))) consts
+		in let (_,v) = List.fold_left (fun (tw,tc) (w,c) -> 
+			(w+tw, add_big_int tc (shift_left_big_int c tw))) (0,zero_big_int) constsranged
+		in v
+
+let big_int_of_bool b = if b then unit_big_int else zero_big_int
+
+let evaluate (o:voperation) = match o.operation with
+	| Variable _  
+	| Constant _ 
+	| Result (_,_,_,_) 
+	| ReturnValue _ -> raise (Invalid_argument "Not appropriate to evaluate")
+	| Unary (u,o1,t) -> 
+		let c1 = constfromoperationlink o1
+		in let c2 = match u with
+			| Cast -> c1
+			| Neg -> minus_big_int c1
+				(* since - is flip bits and add one in two's complement, we do - then subtract 1 *)
+			| BNot -> sub_big_int (minus_big_int c1) unit_big_int
+			| LNot -> if eq_big_int c1 zero_big_int then unit_big_int else zero_big_int
+		in normalisesignwidth c2 (gettypeelement t)
+	| Binary (b,o1,o2,t) -> 
+		let te = gettypeelement t
+		in let c1 = constfromoperationlink o1
+		in let c2 = constfromoperationlink o2
+		in let c3 = match b with
+			| PlusA -> add_big_int c1 c2
+			| MinusA -> sub_big_int c1 c2
+			| Mult -> mult_big_int c1 c2
+			| Div -> div_big_int c1 c2
+			| Mod -> mod_big_int c1 c2
+			| Shiftlt -> shift_left_big_int c1 (int_of_big_int c2)
+			| Shiftrt -> shift_right_big_int c1 (int_of_big_int c2)
+			| Lt -> big_int_of_bool (lt_big_int c1 c2)
+			| Gt -> big_int_of_bool (gt_big_int c1 c2)
+			| Le -> big_int_of_bool (le_big_int c1 c2)
+			| Ge -> big_int_of_bool (ge_big_int c1 c2)
+			| Eq -> big_int_of_bool (eq_big_int c1 c2)
+			| Ne -> big_int_of_bool (not(eq_big_int c1 c2))
+			| BAnd -> and_big_int (positivise c1 te) (positivise c2 te)
+			| BXor -> xor_big_int (positivise c1 te) (positivise c2 te)
+			| BOr -> or_big_int (positivise c1 te) (positivise c2 te)
+		in normalisesignwidth c3 te
+	| Ternary (o1,o2,o3,t) -> 
+		let c1 = if (eq_big_int (constfromoperationlink o1) zero_big_int)
+			then constfromoperationlink o3
+			else constfromoperationlink o2
+		in normalisesignwidth c1 (gettypeelement t)
+				

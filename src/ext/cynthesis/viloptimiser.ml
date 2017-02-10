@@ -87,6 +87,27 @@ let variablecull (f:funmodule) =
 			else ()
 		) entry.bvars 
 
+(* Constant folding *)
+
+let rec constfold (v:vvarinfo) (b:vblock) = 
+	match Listutil.mapfilter (fun o -> 
+		if Vilanalyser.constchildren o
+		then let op = makeoperation (Constant {value=Vilanalyser.evaluate o;ctype=gettype v o})
+			in Some((o,op),(o,Simple op))
+		else None
+	) b.bdataFlowGraph
+	with
+		| [] -> ()
+		| x -> 
+			let (ops,reps) = List.split x
+			in let (rm,newops) = List.split ops
+			in let ids = List.map (fun o -> o.oid) rm
+			in  b.bdataFlowGraph <- List.filter (fun o -> not(List.mem o.oid ids)) b.bdataFlowGraph;
+				replaceoperations reps b.bdataFlowGraph;
+				replaceconditions reps b.boutputs;
+				b.bdataFlowGraph <- List.rev_append newops b.bdataFlowGraph;
+				constfold v b
+
 (* Dead Code elimination and duplicate operation removal *)
 
 (** remove unreferenced ops, update children, repeat *)
@@ -148,16 +169,22 @@ let optimisefunmodule (f:funmodule) =
 		f.vblocks <- removeunreachableblocks f.vblocks;
 		(* intra block optimisations *)
 
-		(* Live variable analysis
-		 * annotates blocks with live variables,
-		 * removes unnecessary Result (_,_) labels and
-		 * removes unused local variables completely 
-		 *)
-		variablecull f;
 		(* Dead code elimination and duplicate operation removal 
 		 * removes any operations which are not needed by a 
 		 * result label, control flow condition or return value
 		 * also checks to see if blocks contain duplicate operations,
 		 * removing surplus ones.
 		 *)
+		culloperations f;
+
+		List.iter (constfold f.vdesc) f.vblocks;
+
+		(* Live variable analysis
+		 * annotates blocks with live variables,
+		 * removes unnecessary Result (_,_) labels and
+		 * removes unused local variables completely 
+		 *)
+		variablecull f;
+		
+		(* run this again to catch the dead code the variable cull reveals *)
 		culloperations f;

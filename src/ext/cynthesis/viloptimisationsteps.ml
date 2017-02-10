@@ -188,11 +188,7 @@ let hillclimibingoptimiser (fm:funmodule) =
 				;
 	 			f
 	 		| h::t -> let imp = applyoptimisation (Vilcopy.clone f) h
-		 		in  if !domoduleprint
-						then E.log "%s\n" (print_funmodule imp)
-						else ()
-					;
-					Viloptimiser.optimisefunmodule imp;
+		 		in  Viloptimiser.optimisefunmodule imp;
 	 				if !verbose 
 						then E.log "Applied %s\n" (string_of_optimisation h)
 						else ()
