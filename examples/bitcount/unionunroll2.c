@@ -2,8 +2,10 @@
 
 int bitcount(unsigned int input);
 
+const int lookup[4] = {0,1,1,2};
+
 inline int bitcount (unsigned int in){
-	int lookup[4] = {0,1,1,2};
+
 	union {
 		int v;
 		struct {
