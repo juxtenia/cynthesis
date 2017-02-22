@@ -66,7 +66,8 @@ and vasttype = {
 		(** The width of the type, in bits *)
 	mutable isSigned: bool;
 		(** Whether this is a signed variable *)
-	mutable logictype: vastlogic
+	mutable logictype: vastlogic;
+		(** The kind of logic this is implemented with *)
 }
 and vastlogic = 
 	| WIRE (* indicates a wire *)
