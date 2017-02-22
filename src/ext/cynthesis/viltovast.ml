@@ -4,10 +4,11 @@ module E = Errormsg
 
 let defaultrange (v:vastvariable) = VARIABLE { variable = v; range=None; }
 
-let vil_to_vast_type (l:vastlogic) (t:vtype) :vasttype = match t with
-	| Basic te -> { width = te.width; isSigned = te.isSigned; logictype = l; }
-	| Struct (te,cel) -> { width = te.width; isSigned = te.isSigned; logictype = l; }
-	| Union (te,cel) -> { width = te.width; isSigned = te.isSigned; logictype = l; }
+let onewidetype l = {width=1; isSigned=false; logictype=l; arraytype=[]; }
+let onewidevar l n = {name=n; resetto=Big_int.zero_big_int; typ=onewidetype l; } 
+
+let vil_to_vast_type (l:vastlogic) (t:vtype) :vasttype = let te = gettypeelement t 
+	in { width = te.width; isSigned = te.isSigned; logictype = l; arraytype = []; }
 
 let vil_to_vast_variable (l:vastlogic) (v:vvarinfo) :vastvariable = {
 	name = v.varname;
@@ -102,11 +103,11 @@ let makeoutputwirevariable (r:vastmodule) (m:vblock) (v:vvarinfo) (o:vastexpress
 
 let makecontrolvariable (l:vastlogic) (r:vastmodule) (m:vblock) = 
 	let controlstartvariable = makelvalnorange (getcontrolvariablename m.bid startcontrol) 
-		({width=1; isSigned=false; logictype=l;})
+		(onewidetype l)
 	in let controlendvariable = makelvalnorange (getcontrolvariablename m.bid endcontrol) 
-		({width=1; isSigned=false; logictype=WIRE;})
+		(onewidetype WIRE)
 	in let controlfollowvariable = makelvalnorange (getcontrolvariablename m.bid followcontrol)
-		({width=1; isSigned=false; logictype=REG;})
+		(onewidetype REG)
 	in  addvar r controlstartvariable;
 		addwirevar r controlendvariable true (VARIABLE controlstartvariable);
 		addregvar r controlfollowvariable (match l with
@@ -118,14 +119,14 @@ let makecontrolvariable (l:vastlogic) (r:vastmodule) (m:vblock) =
 
 let makecontrolvariablesequence (i:int) (r:vastmodule) (m:vblock) = 
 	let controlstartvariable = makelvalnorange (getcontrolvariablename m.bid startcontrol) 
-		({width=1; isSigned=false; logictype=REG;})
+		(onewidetype REG)
 	in let controlendvariable = makelvalnorange (getcontrolvariablename m.bid endcontrol) 
-		({width=1; isSigned=false; logictype=WIRE;})
+		(onewidetype WIRE)
 	in let controlfollowvariable = makelvalnorange (getcontrolvariablename m.bid followcontrol)
-		({width=1; isSigned=false; logictype=REG;})
+		(onewidetype REG)
 	in let rec driver j p = if j >= i then p else(
 		let controlnextvariable = makelvalnorange (getcontrolvariablename m.bid (string_of_int j)) 
-			({width=1; isSigned=false; logictype=REG;})
+			(onewidetype REG)
 		in addregvar r controlnextvariable false (VARIABLE p);
 		driver (j+1) controlnextvariable
 	)
@@ -343,9 +344,9 @@ let vil_to_vast_connections (r:vastmodule) (m:vblock) =
 	dataconnections r m
 
 let vil_to_vast (f:funmodule):vastmodule = 
-	let startcontrol = {name=startinput; resetto=Big_int.zero_big_int; typ={width=1; isSigned=false; logictype=NA; }; } 
-	in let startfollowcontrol = {name=startfollow; resetto=Big_int.zero_big_int; typ={width=1; isSigned=false; logictype=REG; }; } 
-	in let readycontrol = {name=finishoutput; resetto=Big_int.zero_big_int; typ={width=1; isSigned=false; logictype=REG; }; } 
+	let startcontrol = onewidevar NA startinput
+	in let startfollowcontrol = onewidevar REG startfollow
+	in let readycontrol = onewidevar REG finishoutput
 	in let resultoutput = vil_to_vast_variable REG f.vdesc
 	in let ret = {
 		modname = f.vdesc.varname;

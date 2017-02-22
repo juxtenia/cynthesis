@@ -159,7 +159,7 @@ let timecostweight = 10.
 
 (** Evaluates how good a module is *)
 let evaluate (f:funmodule) = 
-	Vilannotator.generatescheduleinfo f;
+	Vilscheduler.generatescheduleinfo f;
 	let opcost = float_of_int (totaloperationcost f)
 	in let timecost = weightedtimecost f
 	in let totalcost = opcostweight *. opcost +. timecostweight *. timecost

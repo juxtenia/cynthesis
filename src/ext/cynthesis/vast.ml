@@ -68,6 +68,8 @@ and vasttype = {
 		(** Whether this is a signed variable *)
 	mutable logictype: vastlogic;
 		(** The kind of logic this is implemented with *)
+	mutable arraytype: int list;
+		(** [] represents basic type, [5] represents e.g. a reg [3:0] v [5] *)
 }
 and vastlogic = 
 	| WIRE (* indicates a wire *)
@@ -162,13 +164,15 @@ and vastvariable_to_reset_assignment v =
 	then Some (v.name ^ " <= " ^ (string_of_int v.typ.width) ^ "'d" 
 				^ (string_of_big_int v.resetto) ^ ";\n        ")
 	else None
-and vastvariable_to_verilog v = 
-	(vasttype_to_verilog v.typ) ^ v.name
+and vastvariable_to_verilog v = let (b,a) = vasttype_to_verilog v.typ
+	in b ^ v.name ^ a
 and vastconstant_to_verilog c = (string_of_int c.cwidth) ^ "'d" ^ (string_of_big_int c.value)
-and vasttype_to_verilog t = 
-	(vastlogic_to_verilog t.logictype)
-	^ (if t.isSigned then "signed " else "")
-	^ (if (t.width < 2) then "" else "[" ^ (string_of_int (t.width - 1)) ^ ":0] ")
+and vasttype_to_verilog t = (
+		(vastlogic_to_verilog t.logictype)
+			^ (if t.isSigned then "signed " else "")
+			^ (if (t.width < 2) then "" else "[" ^ (string_of_int (t.width - 1)) ^ ":0] "),
+		String.concat "" (List.map (fun i -> "[" ^ string_of_int i ^ "]") t.arraytype)
+	)
 and vastlogic_to_verilog l = match l with
 	| WIRE -> "wire "
 	| REG  -> "reg "
