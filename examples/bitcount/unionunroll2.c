@@ -5,9 +5,8 @@ int bitcount(unsigned int input);
 const int lookup[4] = {0,1,1,2};
 
 inline int bitcount (unsigned int in){
-
 	union {
-		int v;
+		unsigned int v;
 		struct {
 			unsigned int  i1:2;
 			unsigned int  i2:2;
@@ -49,6 +48,6 @@ inline int bitcount (unsigned int in){
 }
 
 int main (int argc, int *argv[]){
-	printf("%d\n",bitcount(11));
+	printf("%d\n",bitcount(argc));
 	return 0;
 }
