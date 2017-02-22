@@ -33,8 +33,8 @@ let writestringtofile (file:string) (value:string) =
 (** converts a cil fundec into a vil funmodule, and does appropriate outputs,
  *  before converting it into a vast module, turning that into a string, and 
  *  outputing it to the file with the same name as the function name *)
-let funtomodule (f:fundec) = 
-	let ret = Viloptimisationsteps.hillclimibingoptimiser (Ciltovil.generatefunmodule f)
+let funtomodule (inits:((string*vinitinfo) list)) (f:fundec) = 
+	let ret = Viloptimisationsteps.hillclimibingoptimiser (Ciltovil.generatefunmodule inits f)
 	in  
 		(* dump module info *)
 		if(!printflags land 8 <> 0) then E.log("%s\n") (string_of_funmodule ret) else ();
@@ -61,7 +61,7 @@ let cynthesise f =
 	 * Simplify feature runs after the makeCFG feature
 	 * meaing CFG is incomplete
 	 *)
-	Simplify.feature.fd_doit f;
+	(*Simplify.feature.fd_doit f;*)
 	Partial.makeCFGFeature.fd_doit f;
 	Partial.makeCFGFeature.fd_enabled <- true; (* Stops the partial feature failing *)
 	Partial.feature.fd_doit f;
@@ -73,11 +73,15 @@ let cynthesise f =
 	(* check that we can synthesise the marked functions
 	 * Validitycheck prints out problems as it finds them *)
 	if Validitycheck.check f 
-	then List.iter (fun glob -> match glob with
-    	| GFun(fd,_) when fd.svar.vinline -> funtomodule fd;
-      			fd.svar.vinline <- false (* Temporary hack to stop gcc having a hissy fit*)
-    	| _ -> ()
-  	) f.globals
+	then let inits = ref []
+		in  List.iter (fun glob -> match glob with
+				| GVar(v,i,_) -> 
+					(try inits := (Ciltovil.generate_initinfo v i) :: !inits
+					with | Invalid_argument _ -> ())
+    			| GFun(fd,_) when fd.svar.vinline -> funtomodule !inits fd;
+      				fd.svar.vinline <- false (* Temporary hack to stop gcc having a hissy fit*)
+    			| _ -> ()
+  			) f.globals
     else E.log("There were errors \n")
 
 (** useful padding for the feature item *)

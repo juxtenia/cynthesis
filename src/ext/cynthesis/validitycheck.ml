@@ -3,6 +3,20 @@ module E = Errormsg
 
 let pass = ref true;;
 
+let rec isConstType (t:typ) = 
+	let checkattr = List.exists (fun (Attr(n,_)) -> n = "const")
+	in match t with
+	| TVoid (a)
+	| TInt (_,a)
+	| TFloat (_,a) 
+	| TFun (_,_,_,a) 
+	| TNamed (_,a) 
+	| TComp (_,a) 
+	| TEnum (_,a) 
+	| TBuiltin_va_list (a) -> checkattr a
+	| TPtr (t1,_) -> isConstType t1
+	| TArray (t1,_,a) -> checkattr a || isConstType t1
+	
 class validatorVisitor = object(self)
 	inherit nopCilVisitor 
 
@@ -25,7 +39,7 @@ class validatorVisitor = object(self)
 	    | _ -> ()
 
 	    );
-		if v.vglob && (match v.vtype with 
+		if v.vglob && not (isConstType v.vtype) && (not (List.exists (fun (Attr(n,_)) -> n = "const") (typeAttrs v.vtype))) && (match v.vtype with 
 			| TFun(_,_,_,_) -> false 
 			| _ -> true) 
 		then (pass := false; E.log "%a: ERROR Can't use global variable %s in hardware function.\n" d_loc v.vdecl v.vname; SkipChildren)
@@ -69,7 +83,9 @@ class validatorVisitor = object(self)
 		| TInt(IBool,_) -> pass := false; E.log "ERROR Can't use bool type %a in hardware function.\n" d_type t; DoChildren
 		| TFloat(_,_) -> pass := false; E.log "ERROR Can't use floating point type %a in hardware function.\n" d_type t; DoChildren
 		| TPtr(_,_) -> pass := false; E.log "ERROR Can't use pointer type %a in hardware function.\n" d_type t; DoChildren
-		| TArray(_,_,_) -> pass := false; E.log "ERROR Can't use array type %a in hardware function.\n" d_type t; DoChildren
+		| TArray(_,None,_) -> pass := false; E.log "ERROR Can't use variable array type %a in hardware function.\n" d_type t; DoChildren
+		| TArray(_,Some _,a) when not (isConstType t)
+			-> pass := false; E.log "ERROR Can't use not constant type array type %a in hardware function.\n" d_type t; DoChildren
 		| TFun(_,_,true,_) -> pass := false; E.log "ERROR Hardware function can't be varargs type %a.\n" d_type t; DoChildren
 		| _ -> DoChildren
 	

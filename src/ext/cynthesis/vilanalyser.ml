@@ -229,7 +229,7 @@ let constfromoperationlink (ol:voperationlink) = match ol with
 
 let big_int_of_bool b = if b then unit_big_int else zero_big_int
 
-let evaluate (o:voperation) = match o.operation with
+let evaluate (inits:(string * vinitinfo) list) (o:voperation) = match o.operation with
 	| Variable _  
 	| Constant _ 
 	| Result (_,_,_,_) 
@@ -270,4 +270,17 @@ let evaluate (o:voperation) = match o.operation with
 			then constfromoperationlink o3
 			else constfromoperationlink o2
 		in normalisesignwidth c1 (gettypeelement t)
+	| Lookup (v,ol,t) -> 
+		let rec driver i cl = 
+			match (i,cl) with
+				| (_,[]) -> i
+				| (Array il,h::t) -> driver (List.nth il (Big_int.int_of_big_int h)) t
+				| _ -> E.s (E.error "Invalid initinfo for %s" v)
+		in  match 
+				driver 
+					(Listutil.findfilter (fun (v1,i) -> if v1=v then Some i else None) inits) 
+					(List.map constfromoperationlink ol)
+			with 
+				| Const c -> c.value
+				| _ -> E.s (E.error "Invalid initinfo for %s" v)
 				

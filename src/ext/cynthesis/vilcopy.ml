@@ -11,6 +11,7 @@ and clone_unop u = u
 and clone_binop b = b
 and clone_funmodule f = {
 	vdesc = f.vdesc;
+	vglobals = List.map (fun (s,i) -> (s,clone_vinitinfo i)) f.vglobals;
 	vinputs = List.map clone_vvarinfo f.vinputs;
 	vlocals = List.map clone_vvarinfo f.vlocals;
 	vblocks = List.map clone_vblock f.vblocks;
@@ -23,6 +24,10 @@ and clone_vconstinfo c = {
 	value = c.value;
 	ctype = clone_vtype c.ctype;
 }
+and clone_vinitinfo i = match i with 
+	| Const c -> Const (clone_vconstinfo c)
+	| Comp l -> Comp (List.map (fun (s,i) -> (s,clone_vinitinfo i)) l)
+	| Array l -> Array (List.map clone_vinitinfo l)
 and clone_vconnection c = {
 	connectfrom = c.connectfrom;
 	connectto = c.connectto;
@@ -72,6 +77,7 @@ and clone_voperationtype ops ot = match ot with
 		clone_voperationlink ops ol2, clone_vtype t)
 	| Ternary (ol1,ol2,ol3,t) -> Ternary (clone_voperationlink ops ol1, clone_voperationlink ops ol2,
 		clone_voperationlink ops ol3, clone_vtype t)
+	| Lookup (v,ol1,t) -> Lookup (v, List.map (clone_voperationlink ops) ol1, clone_vtype t)
 and clone_vtype t = match t with
 	| Basic te -> Basic (clone_vtypeelement te)
 	| Struct (te,cel) -> Struct (clone_vtypeelement te, List.map clone_vcompelement cel)
@@ -166,6 +172,8 @@ and duplicate_voperationtype reps ops ot = match ot with
 		duplicate_voperationlink reps ops ol2, duplicate_vtype t)
 	| Ternary (ol1,ol2,ol3,t) -> Ternary (duplicate_voperationlink reps ops ol1, duplicate_voperationlink reps ops ol2,
 		duplicate_voperationlink reps ops ol3, duplicate_vtype t)
+	| Lookup (v,ol1,t) -> Lookup (v,
+		List.map (duplicate_voperationlink reps ops) ol1, duplicate_vtype t)
 and duplicate_vtype t = clone_vtype t;;
 
 let duplicate = duplicate_vblocks

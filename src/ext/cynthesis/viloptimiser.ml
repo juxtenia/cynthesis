@@ -89,10 +89,10 @@ let variablecull (f:funmodule) =
 
 (* Constant folding *)
 
-let rec constfold (v:vvarinfo) (b:vblock) = 
+let rec constfold (inits:(string * vinitinfo) list) (v:vvarinfo) (b:vblock) = 
 	match Listutil.mapfilter (fun o -> 
 		if Vilanalyser.constchildren o
-		then let op = makeoperation (Constant {value=Vilanalyser.evaluate o;ctype=gettype v o})
+		then let op = makeoperation (Constant {value=Vilanalyser.evaluate inits o;ctype=gettype v o})
 			in Some((o,op),(o,Simple op))
 		else None
 	) b.bdataFlowGraph
@@ -106,7 +106,7 @@ let rec constfold (v:vvarinfo) (b:vblock) =
 				replaceoperations reps b.bdataFlowGraph;
 				replaceconditions reps b.boutputs;
 				b.bdataFlowGraph <- List.rev_append newops b.bdataFlowGraph;
-				constfold v b
+				constfold inits v b
 
 (* Dead Code elimination and duplicate operation removal *)
 
@@ -177,7 +177,7 @@ let optimisefunmodule (f:funmodule) =
 		 *)
 		culloperations f;
 
-		List.iter (constfold f.vdesc) f.vblocks;
+		List.iter (constfold f.vglobals f.vdesc) f.vblocks;
 
 		(* Live variable analysis
 		 * annotates blocks with live variables,

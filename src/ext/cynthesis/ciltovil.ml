@@ -124,36 +124,57 @@ let getvarrange (v:varinfo) (o:offset) (lv:lval) =
 		| _ -> E.s (E.error "Illegal lvalue %a\n" d_lval lv)
 	in driver 0 (generatetype v.vtype) o
 
+let rec indexlist (t:typ) (o:offset) = match (t,o) with 
+	| (_,NoOffset) -> Some (t,[])
+	| (TArray (t1,_,_),Index (e,o1)) -> (match indexlist t1 o1 with
+		| Some (t2,el) -> Some (t2,e::el)
+		| None -> None
+	)
+	| (_,_) -> None
+
+
 (* generates appropriate operations in m for the expression.
  * variables are resolved using vars *)
-let rec makedataflow (e:exp) :(voperation list * voperationlink) = 
+let rec makedataflow (inits:((string*vinitinfo) list)) (e:exp) :(voperation list * voperationlink) = 
 	let (acn,ret) = 
 	match e with
-		| Const c -> ([], Simple (makeoperation (Constant (generateconstant c))))
+		| Const c -> 
+			([], Simple (makeoperation (Constant (generateconstant c))))
   		| Lval l -> (match l with
-  			| (Var(v),NoOffset) -> 
-  				let var = makeoperation (Variable (generatevariable v)) 
-  				in ([], Simple var)
-  			| (Var(v),o) -> let (b,w) = getvarrange v o l
-  				in let var = makeoperation (Variable (generatevariable v)) 
-  				in ([], Compound [{
-  					loperation=var;
-  					lbase=b;
-  					lwidth=w; }])
+  			| (Var(v),NoOffset) -> if v.vglob 
+  				then
+  					match Listutil.mapfilter (fun (s,i) -> 
+  						if s = v.vname then Some(i) else None
+  					) inits with
+  						| [Const c] -> ([], Simple (makeoperation (Constant  c)))
+  						| _ -> E.s (E.error "Invalid initinfo\n")
+  				else
+  					let var = makeoperation (Variable (generatevariable v)) 
+  					in ([], Simple var)
+  			| (Var(v),o) -> (match indexlist v.vtype o with
+  				| Some (t,l) -> let (sublists,links) = List.split (List.map (makedataflow inits) l)
+  					in (List.flatten sublists, Simple (makeoperation (Lookup (v.vname, links, generatetype t))))
+  				| None -> let (b,w) = getvarrange v o l
+  					in let var = makeoperation (Variable (generatevariable v)) 
+  					in ([], Compound [{
+  						loperation=var;
+  						lbase=b;
+  						lwidth=w; }])
+  				)
   			| _ -> E.s (E.error "Illegal lvalue %a\n" d_lval l)
   		)
-  		| UnOp (u,e1,t) -> let (ac1,r1) = makedataflow e1
+  		| UnOp (u,e1,t) -> let (ac1,r1) = makedataflow inits e1
   			in (ac1, Simple(makeoperation (Unary (generateunop u, r1, generatetype t))))
-  		| BinOp (b,e1,e2,t) -> let (ac1,r1) = makedataflow e1
-  			in let (ac2,r2) = makedataflow e2
+  		| BinOp (b,e1,e2,t) -> let (ac1,r1) = makedataflow inits e1
+  			in let (ac2,r2) = makedataflow inits e2
   			in (List.rev_append ac1 ac2, Simple(makeoperation (Binary (generatebinop b, r1, r2, generatetype t))))
-  		| CastE (t,e1) -> let (ac1,r1) = makedataflow e1
+  		| CastE (t,e1) -> let (ac1,r1) = makedataflow inits e1
   			in (ac1,Simple (makeoperation (Unary (Cast, r1, generatetype t))))
   		| _ -> E.s (E.error "Illegal expression %a.\n" d_exp e)   
   	in 	(List.rev_append (getlinkchildren ret) acn,ret)
 
-let makereturn (e:exp) :voperation list = 
-	let (ops,ln) = makedataflow e
+let makereturn (inits:((string*vinitinfo) list)) (e:exp) :voperation list = 
+	let (ops,ln) = makedataflow inits e
 	in (makeoperation (ReturnValue ln)) :: ops
 
 let overwritevariable (v:vvarinfo) (b:int) (w:int) (ol:voperationlink) =
@@ -167,8 +188,8 @@ let overwritevariable (v:vvarinfo) (b:int) (w:int) (ol:voperationlink) =
 		| Compound cll -> getrange 0 w cll
 	in (op,Compound (initial @ biddle @ terminal))
 
-let generateset (lv:lval) (e:exp) :voperation list =
-	let (ops,reslink) = makedataflow e 
+let generateset (inits:((string*vinitinfo) list)) (lv:lval) (e:exp) :voperation list =
+	let (ops,reslink) = makedataflow inits e 
 	in let (extra,resulttype) = match lv with
 		| (Var(v),NoOffset) -> let v1 = generatevariable v
 			in ([],Result (v1,0,(gettypeelement v1.vtype).width,reslink))
@@ -181,12 +202,12 @@ let generateset (lv:lval) (e:exp) :voperation list =
 	in  result :: (List.rev_append extra ops)
 
 (* generates operations from a list of Cil instr *)
-let rec makeinstrlist (m:vblock) (il:instr list) =
+let rec makeinstrlist (inits:((string*vinitinfo) list)) (m:vblock) (il:instr list) =
 	match il with
 	| h :: t -> (match h with
 		| Set (lv,e,l) -> 
-			m.bdataFlowGraph <- mergeoperations m.bdataFlowGraph (generateset lv e) m.boutputs;
-			makeinstrlist m t
+			m.bdataFlowGraph <- mergeoperations m.bdataFlowGraph (generateset inits lv e) m.boutputs;
+			makeinstrlist inits m t
 		| Call (_,_,_,l) -> E.s (E.error "At %a illegal instr %a.\n" d_loc l d_instr h) 
 		| Asm (_,_,_,_,_,l) -> E.s (E.error "At %a illegal instr %a.\n" d_loc l d_instr h) 
 	)
@@ -216,7 +237,7 @@ let getvblocktype (s:stmt):vblocktype = match s.skind with
 	| _ -> E.s (E.error "Illegal stmt %a.\n" d_stmt s) 
 
 (* generates a module from a Cil stmt *)
-let generatemodule (v:vvarinfo) (entryid:int) (s:stmt) :vblock = 
+let generateblock (inits:((string*vinitinfo) list)) (v:vvarinfo) (entryid:int) (s:stmt) :vblock = 
 	let ret = 
 	{
 		bid = s.sid;
@@ -231,10 +252,10 @@ let generatemodule (v:vvarinfo) (entryid:int) (s:stmt) :vblock =
 			| Instr (il) -> (match s.succs with
   				| h::[] -> ret.boutputs <- oneconnection s.sid h.sid
   				| _ -> E.s (E.error "Stmt %a has incorrect successors\n" d_stmt s)
-  			); makeinstrlist ret il
+  			); makeinstrlist inits ret il
   			| Return (eo,l) -> (match eo with
   					| None -> ()
-  					| Some e -> ret.bdataFlowGraph <- makereturn e
+  					| Some e -> ret.bdataFlowGraph <- makereturn inits e
   				);
   				(match s.succs with
   					| [] -> ret.boutputs <- returnconnection s.sid
@@ -252,7 +273,7 @@ let generatemodule (v:vvarinfo) (entryid:int) (s:stmt) :vblock =
   				| h::[] -> ret.boutputs <- oneconnection s.sid h.sid
   				| _ -> E.s (E.error "At %a stmt %a has incorrect successors\n" d_loc l d_stmt s)
   			)
-  			| If (e,b1,b2,l) -> let (ops,result) = makedataflow e
+  			| If (e,b1,b2,l) -> let (ops,result) = makedataflow inits e
   				in  ret.bdataFlowGraph <- ops;
   					(match s.succs with
   						| fb::tb::[] -> ret.boutputs <- ifconnection s.sid result tb.sid fb.sid 0.5
@@ -281,7 +302,7 @@ let extractminentry (ss:stmt list) :int =
 		| h::t -> h.sid
 
 (* generates a top level module from a function definition *)
-let generatefunmodule (f:fundec) :funmodule = 
+let generatefunmodule (init:(string * vinitinfo) list) (f:fundec) :funmodule = 
 	(* Reset op ids *)
 	dataid := 0; 
 	(* generate variable for function *)
@@ -292,9 +313,87 @@ let generatefunmodule (f:fundec) :funmodule =
 	 * and annotation before it is useful*)
 	in let ret = {
 		vdesc = vardesc;
+		vglobals = init;
 		vinputs = generatevariables f.sformals;
 		vlocals = generatevariables f.slocals;
-		vblocks = List.map (generatemodule vardesc entryid) f.sallstmts;
+		vblocks = List.map (generateblock init vardesc entryid) f.sallstmts;
 	}
 	in  (* return *)
 		ret
+
+let rec get_int_list acc (i:int64) = 
+	if (Int64.compare i Int64.zero) = 0
+	then acc
+	else let pred = Int64.add i Int64.minus_one
+		in get_int_list (pred :: acc) pred
+
+let rec get_zero_init (t:typ) :vinitinfo = match t with
+	| TInt(_,_) 
+	| TEnum(_,_) -> Const {value=Big_int.zero_big_int;ctype=generatetype t;}
+	| TComp (ci,_) -> if ci.cstruct
+			then Comp (List.map (fun f -> (f.fname, get_zero_init f.ftype)) ci.cfields)
+			else (match List.map (fun f -> 
+					((f.fname, get_zero_init f.ftype), gettypeelement (generatetype f.ftype))) ci.cfields 
+				with 
+					| h::ta -> 
+						Comp [(fst (List.fold_left (fun (l,te) (nl,nte) -> 
+							if nte.width > te.width
+							then (nl,nte)
+							else (l,te)) 
+						h ta))]
+					| [] -> Comp []
+				)
+	| TArray (t1,Some (Const (CInt64 (i,_,_))),a) -> 
+		let subinit = get_zero_init t1
+		in Array (
+			List.map (fun _ -> subinit) (get_int_list [] i)
+		)
+	| TNamed (t,_) -> get_zero_init t.ttype
+	| _ -> raise (Invalid_argument "Can't init")
+
+let rec get_init (i:init) :vinitinfo = match i with
+	| SingleInit e -> (match constFold true e with 
+    	| Const c -> Const (generateconstant c)
+    	| _ -> Const {value=Big_int.zero_big_int; ctype=generatetype (typeOf e);}
+    )
+	| CompoundInit (t,oil) -> match t with
+		| TComp(ci,_) -> if ci.cstruct
+			then Comp (List.map (fun f ->
+					(
+						f.fname,
+						try Listutil.findfilter (fun (o,i) -> 
+								if o = Field(f,NoOffset)
+								then Some (get_init i)
+								else None
+							) oil
+						with | Not_found -> get_zero_init f.ftype
+					)
+				) ci.cfields
+			)
+			else 
+				Comp (List.map (fun (o,i) -> match o with
+					| Field(f,NoOffset) -> (f.fname,get_init i)
+					| _ -> E.s (E.error "Incorrect init info\n")
+				) oil)
+		| TArray (t1,Some (Const (CInt64 (i,_,_))),a) -> let subinit = get_zero_init t1
+			in Array (
+				List.map (fun p -> 
+					try Listutil.findfilter (fun (o,si) -> match o with
+						| Index(e, NoOffset) when 
+							(match constFold true e with 
+								| Const(CInt64(i1,_,_)) when (Int64.compare p i1) = 0
+								-> true
+								| e1 -> false
+							) -> Some (get_init si)
+						| _ -> None
+						) oil
+					with | Not_found -> subinit
+				) (get_int_list [] i)
+			)
+		| _ -> get_zero_init t
+
+let generate_initinfo (v :varinfo) (i :initinfo) = 
+	let vili = match i.init with
+		| None -> get_zero_init v.vtype
+		| Some init -> get_init init
+	in  (v.vname,vili)

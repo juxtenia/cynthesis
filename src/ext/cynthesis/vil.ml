@@ -32,6 +32,8 @@ and binop =
 and funmodule = {
 	mutable vdesc: vvarinfo;
 		(** The name and output type of the function *) 
+	mutable vglobals: (string * vinitinfo) list;
+		(** The global variables that are referenced *)
 	mutable vinputs: vvarinfo list;
 		(** The parameters to the function *)
 	mutable vlocals: vvarinfo list;
@@ -53,6 +55,14 @@ and vconstinfo = {
 	mutable ctype: vtype;
 		(** the type of this constant *)
 }
+(** initialiser for global consts *)
+and vinitinfo = 
+	| Const of vconstinfo
+		(** Basic constant *)
+	| Comp of (string * vinitinfo) list
+		(** Composite type, a list of field names and initialisers *)
+	| Array of vinitinfo list
+		(** Array initialisers *)
 (** connection between two blocks *)
 and vconnection = {
 	mutable connectfrom: int option;
@@ -142,6 +152,8 @@ and voperationtype =
 	| Ternary of voperationlink * voperationlink * voperationlink * vtype
 		(** multiplexes between the last two items, based on the nonzeroness 
 			of the first*)
+	| Lookup of string * (voperationlink list) * vtype
+		(** lookup the named lookup table at the specified index *)
 (** types for vil *)
 and vtype = 
 	| Basic of vtypeelement
@@ -207,6 +219,8 @@ and string_of_binop b = match b with
   | BOr -> "BOr"
 and string_of_funmodule f = 
 	"{ vdesc:" ^ string_of_vvarinfo f.vdesc
+	^ ", vglobals:" ^ string_of_list_sq (fun (s,i) -> 
+		"(\"" ^ s ^ "\", " ^ string_of_vinitinfo i ^ ")") f.vglobals
 	^ ", vinputs:" ^ string_of_vvarinfo_list f.vinputs
 	^ ", vlocals:" ^ string_of_vvarinfo_list f.vlocals
 	^ ", vblocks:" ^ string_of_vblock_list f.vblocks
@@ -220,6 +234,11 @@ and string_of_vconstinfo c =
 	"{ value:" ^ string_of_big_int c.value
 	^ ", vtype:" ^ string_of_vtype c.ctype
 	^ "}"
+and string_of_vinitinfo i = match i with
+	| Const c -> "Const(" ^ string_of_vconstinfo c ^ ")"
+	| Comp l -> "Comp(" ^ string_of_list_sq (fun (s,i) -> 
+		"(" ^ s ^ ", " ^ string_of_vinitinfo i ^ ")") l
+	| Array l -> "Array(" ^ string_of_list_sq string_of_vinitinfo l ^ ")"
 and string_of_vconnection c = 
 	"{ connectfrom:" ^ (match c.connectfrom with 
 		| Some i -> string_of_int i
@@ -255,7 +274,7 @@ and string_of_vblocktype bt = match bt with
 	| Block -> "Block"
 and string_of_vblock_list l = string_of_list_sq string_of_vblock l
 and string_of_voperationlink ol = match ol with
-	| Simple o -> "Simple:" ^ string_of_voperation o
+	| Simple o -> "Simple:" ^ string_of_int o.oid
 	| Compound ol -> "Compound:" ^ string_of_list_sq string_of_vcomplink ol
 and string_of_vcomplink vl = 
 	"{ loperation:" ^ string_of_int vl.loperation.oid
@@ -277,14 +296,18 @@ and string_of_vscheduleinfo si =
 and string_of_voperationtype vt = "{" ^ (match vt with
 	| Variable v -> "Variable:" ^ string_of_vvarinfo v
 	| Constant c -> "Constant:" ^ string_of_vconstinfo c
-	| Result (v,b,w,o) -> "Result:(" ^ string_of_vvarinfo v ^ ", " ^ string_of_int b ^ ", " ^ string_of_int w ^ ", " ^ string_of_voperationlink o ^ ")"
+	| Result (v,b,w,o) -> "Result:(" ^ string_of_vvarinfo v ^ ", " ^ string_of_int b 
+		^ ", " ^ string_of_int w ^ ", " ^ string_of_voperationlink o ^ ")"
 	| ReturnValue o -> "ReturnValue:(" ^ string_of_voperationlink o ^ ")"
 	| Unary (u,o,t) -> "Unary:(" ^ string_of_unop u ^ ", " ^ string_of_voperationlink o ^ ", " 
 		^ string_of_vtype t ^ ")" 
 	| Binary (u,o1,o2,t) -> "Binary:(" ^ string_of_binop u ^ ", " ^ string_of_voperationlink o1
 		^ ", " ^ string_of_voperationlink o2 ^ ", " ^ string_of_vtype t ^ ")" 
-	| Ternary (o1,o2,o3,t) -> "Ternary:(" ^ string_of_voperationlink o1 ^ ", " ^ string_of_voperationlink o2 
-		^ ", " ^ string_of_voperationlink o3 ^ ", " ^ string_of_vtype t ^ ")"
+	| Ternary (o1,o2,o3,t) -> "Ternary:(" ^ string_of_voperationlink o1 
+		^ ", " ^ string_of_voperationlink o2 ^ ", " ^ string_of_voperationlink o3 
+		^ ", " ^ string_of_vtype t ^ ")"
+	| Lookup (v,o,t) -> "Lookup:(" ^ v ^ ", " ^ string_of_list_sq string_of_voperationlink o 
+		^ ", " ^ string_of_vtype t ^ ")"
 	) ^ "}"
 and string_of_vtype t = "{" ^ (match t with
 	| Basic te -> "Basic:" ^ string_of_vtypeelement te
@@ -413,6 +436,9 @@ and print_voperationtype vt = match vt with
 		print_voperationlink o2 ^ ": " ^ print_vtype t
 	| Ternary(o1,o2,o3,t) -> "if " ^ print_voperationlink o1 ^ " then " ^ print_voperationlink o2
 		^ " else " ^ print_voperationlink o3 ^ ": " ^ print_vtype t
+	| Lookup(v,o,t) -> v ^ 
+		(String.concat "" (List.map (fun o1 -> "[" ^ print_voperationlink o1 ^ "]") o)) 
+		^ ": " ^ print_vtype t
 and print_vscheduleinfo si = 
 	"@" ^ string_of_int si.set 
 	^ "(" ^ string_of_int si.earliest 
@@ -438,9 +464,10 @@ let getlinkchildren (l:voperationlink) = match l with
 (** gets the children of an operation *)
 let getchildren (o:voperation) = 
 	match o.operation with
-	| Result (_,_,_,o1) -> getlinkchildren o1
-	| ReturnValue o1 -> getlinkchildren o1
+	| Result (_,_,_,o1) 
+	| ReturnValue o1 
 	| Unary (_,o1,_) -> getlinkchildren o1
+	| Lookup (_,o1,_) -> List.flatten (List.map getlinkchildren o1)
 	| Binary (_,o1,o2,_) -> (getlinkchildren o1) @ (getlinkchildren o2)
 	| Ternary (o1,o2,o3,_) -> (getlinkchildren o1) @ (getlinkchildren o2) @ (getlinkchildren o3)
 	| _ -> []
@@ -458,6 +485,7 @@ let operationoffset (o:voperation) = match o.operation with
 	| Unary (_,_,_)  
 	| Binary(_,_,_,_) -> 1 (* other operators take 1 step *)
 	| Ternary (_,_,_,_) -> 1 (* set to 1 for now *)
+	| Lookup (_,_,_) -> 1 (* lookup takes 1 step for now (could add dimensions later) *)
 	| _ -> 0 (* results, consts returnvalues and variables are instant *)
 
 (* helper functions for manipulating vil objects *)
@@ -569,7 +597,8 @@ let rec gettype (f:vvarinfo) (o:voperation) = match o.operation with
 	| ReturnValue o1 -> f.vtype
 	| Unary (_,_,t) 
 	| Binary (_,_,_,t)
-	| Ternary (_,_,_,t) -> t
+	| Ternary (_,_,_,t)
+	| Lookup (_,_,t) -> t
 
 (* get the name of a function *)
 let functionname (f:funmodule) = f.vdesc.varname
@@ -637,6 +666,7 @@ let replaceoperations (reps :(voperation*voperationlink) list) (ops :voperation 
 			| Unary (u,o1,t) -> Unary(u,replacelink reps o1,t)
 			| Binary (b,o1,o2,t) -> Binary(b,replacelink reps o1, replacelink reps o2,t)
 			| Ternary (o1,o2,o3,t) -> Ternary(replacelink reps o1, replacelink reps o2, replacelink reps o3, t)
+			| Lookup (v,o1,t) -> Lookup (v, List.map (replacelink reps) o1, t)
 			| Variable _
 			| Constant _ -> o.operation
 		in o.operation <- op
@@ -710,7 +740,8 @@ let mergeparralleloperations (returnvar:vvarinfo) (ol:voperationlink) (iot:voper
 			| _ -> swc
 		) [] rot
 	in let nores = List.filter(fun o -> match o.operation with 
-		| Result(_,_,_,_) -> false
+		| Result(_,_,_,_) 
+		| ReturnValue _ -> false
 		| _ -> true )
 	in let nrot = nores rot
 	in let nrof = nores rof
