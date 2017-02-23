@@ -32,7 +32,7 @@ and binop =
 and funmodule = {
 	mutable vdesc: vvarinfo;
 		(** The name and output type of the function *) 
-	mutable vglobals: (string * vinitinfo) list;
+	mutable vglobals: vlookupinfo list;
 		(** The global variables that are referenced *)
 	mutable vinputs: vvarinfo list;
 		(** The parameters to the function *)
@@ -40,6 +40,15 @@ and funmodule = {
 		(** The local variables in the function *)
 	mutable vblocks: vblock list;
 		(** The blocks that provide internal functionality *)
+}
+(** lookup table info *)
+and vlookupinfo = {
+	mutable lookupname: string;
+		(** variable name *)
+	mutable initialiser: vinitinfo;
+		(** value of the lookup *)
+	mutable parrallelcount: int;
+		(** the number of lookups to initialise *)
 }
 (** variable information *)
 and vvarinfo = {
@@ -221,12 +230,16 @@ and string_of_binop b = match b with
   | BOr -> "BOr"
 and string_of_funmodule f = 
 	"{ vdesc:" ^ string_of_vvarinfo f.vdesc
-	^ ", vglobals:" ^ string_of_list_sq (fun (s,i) -> 
-		"(\"" ^ s ^ "\", " ^ string_of_vinitinfo i ^ ")") f.vglobals
+	^ ", vglobals:" ^ string_of_list_sq string_of_vlookupinfo f.vglobals
 	^ ", vinputs:" ^ string_of_vvarinfo_list f.vinputs
 	^ ", vlocals:" ^ string_of_vvarinfo_list f.vlocals
 	^ ", vblocks:" ^ string_of_vblock_list f.vblocks
 	^ "}"
+and string_of_vlookupinfo l = 
+	"{ lookupname:\"" ^ l.lookupname
+	^ "\", initialiser:" ^ string_of_vinitinfo l.initialiser
+	^ ", parrallelcount:" ^ string_of_int l.parrallelcount
+	^ " }"
 and string_of_vvarinfo v = 
 	"{ varname:\"" ^ v.varname
 	^ "\", vtype:" ^ string_of_vtype v.vtype
@@ -749,3 +762,7 @@ let mergeparralleloperations (returnvar:vvarinfo) (ol:voperationlink) (iot:voper
 	in let nrot = nores rot
 	in let nrof = nores rof
 	in List.rev_append (List.rev_append nrot sw) nrof
+
+let allconst l = List.for_all (fun o1 -> match o1.operation with
+			| Constant _ -> true
+			| _ -> false) l

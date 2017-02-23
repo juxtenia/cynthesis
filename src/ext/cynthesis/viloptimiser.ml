@@ -89,7 +89,7 @@ let variablecull (f:funmodule) =
 
 (* Constant folding *)
 
-let rec constfold (inits:(string * vinitinfo) list) (v:vvarinfo) (b:vblock) = 
+let rec constfold (inits:vlookupinfo list) (v:vvarinfo) (b:vblock) = 
 	match Listutil.mapfilter (fun o -> 
 		if Vilanalyser.constchildren o
 		then let op = makeoperation (Constant {value=Vilanalyser.evaluate inits o;ctype=gettype v o})

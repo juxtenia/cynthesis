@@ -196,9 +196,7 @@ let constchildren (o:voperation) = match o.operation with
 	| Constant _
 	| Result (_,_,_,_) 
 	| ReturnValue _ -> false
-	| _ -> List.for_all (fun o1 -> match o1.operation with
-			| Constant _ -> true
-			| _ -> false) (getchildren o)
+	| _ -> allconst (getchildren o)
 
 let rec positivise c t = if lt_big_int c zero_big_int 
 		then positivise (add_big_int c (shift_left_big_int unit_big_int t.width)) t
@@ -229,7 +227,7 @@ let constfromoperationlink (ol:voperationlink) = match ol with
 
 let big_int_of_bool b = if b then unit_big_int else zero_big_int
 
-let evaluate (inits:(string * vinitinfo) list) (o:voperation) = match o.operation with
+let evaluate (inits:vlookupinfo list) (o:voperation) = match o.operation with
 	| Variable _  
 	| Constant _ 
 	| Result (_,_,_,_) 
@@ -278,7 +276,7 @@ let evaluate (inits:(string * vinitinfo) list) (o:voperation) = match o.operatio
 				| _ -> E.s (E.error "Invalid initinfo for %s" v)
 		in  match 
 				driver 
-					(Listutil.findfilter (fun (v1,i) -> if v1=v then Some i else None) inits) 
+					(Listutil.findfilter (fun l -> if l.lookupname=v then Some l.initialiser else None) inits) 
 					(List.map constfromoperationlink ol)
 			with 
 				| Const c -> c.value

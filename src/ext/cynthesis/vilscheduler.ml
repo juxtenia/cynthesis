@@ -1,5 +1,32 @@
 open Vil
 
+(* code for separating operations *)
+type operationcount =
+	| Finite of int
+	| Infinite
+type operationclass = 
+	| DSP
+	| Lookup of string
+	| Other
+
+let dspcount = ref 10
+
+let getclass (o:operation) = match o.operation with
+	| Lookup -> Lookup
+	| Binary(Mult,o1,o2,t)
+	| Binary(Div,o1,o2,t)
+	| Binary(Mod,o1,o2,t) 
+		when not (allconst (getlinkchildren o1)) &&
+			not (allconst (getlinkchildren o2))
+		-> DSP
+	| _ -> Other
+
+let countfromclass ll c = match c with
+	| DSP -> Finite !dspcount
+	| Lookup s -> Finite (Listutil.findfilter (fun l -> 
+		if l.lookupname=s then Some l.parrallelcount else None) ll)
+	| Other -> Infinite
+
 (* code for filling in the schedule *)
 
 (* sets the asap schedule for o *)
@@ -38,6 +65,8 @@ let rec generatealap (latest:int) (acc:voperation list) (ops:voperation list) =
 	| _ -> let (notready,ready) = List.partition (fun o -> List.exists (fun o1 -> List.memq o (getchildren o1)) ops) ops
 		in List.iter (alap latest acc) ready;
 			generatealap latest (List.rev_append ready acc) notready
+
+
 
 (* generates an overall schedule for the module *)
 let rec generateschedule (m:vblock) =

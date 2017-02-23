@@ -11,10 +11,15 @@ and clone_unop u = u
 and clone_binop b = b
 and clone_funmodule f = {
 	vdesc = f.vdesc;
-	vglobals = List.map (fun (s,i) -> (s,clone_vinitinfo i)) f.vglobals;
+	vglobals = List.map clone_vlookupinfo f.vglobals;
 	vinputs = List.map clone_vvarinfo f.vinputs;
 	vlocals = List.map clone_vvarinfo f.vlocals;
 	vblocks = List.map clone_vblock f.vblocks;
+}
+and clone_vlookupinfo l = {
+	lookupname = l.lookupname;
+	initialiser = clone_vinitinfo l.initialiser;
+	parrallelcount = l.parrallelcount;
 }
 and clone_vvarinfo v = {
 	varname = v.varname;

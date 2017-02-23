@@ -135,7 +135,7 @@ let rec indexlist (t:typ) (o:offset) = match (t,o) with
 
 (* generates appropriate operations in m for the expression.
  * variables are resolved using vars *)
-let rec makedataflow (inits:((string*vinitinfo) list)) (e:exp) :(voperation list * voperationlink) = 
+let rec makedataflow (inits:(vlookupinfo list)) (e:exp) :(voperation list * voperationlink) = 
 	let (acn,ret) = 
 	match e with
 		| Const c -> 
@@ -143,8 +143,8 @@ let rec makedataflow (inits:((string*vinitinfo) list)) (e:exp) :(voperation list
   		| Lval l -> (match l with
   			| (Var(v),NoOffset) -> if v.vglob 
   				then
-  					match Listutil.mapfilter (fun (s,i) -> 
-  						if s = v.vname then Some(i) else None
+  					match Listutil.mapfilter (fun l -> 
+  						if l.lookupname = v.vname then Some(l.initialiser) else None
   					) inits with
   						| [Const c] -> ([], Simple (makeoperation (Constant  c)))
   						| _ -> E.s (E.error "Invalid initinfo\n")
@@ -173,7 +173,7 @@ let rec makedataflow (inits:((string*vinitinfo) list)) (e:exp) :(voperation list
   		| _ -> E.s (E.error "Illegal expression %a.\n" d_exp e)   
   	in 	(List.rev_append (getlinkchildren ret) acn,ret)
 
-let makereturn (inits:((string*vinitinfo) list)) (e:exp) :voperation list = 
+let makereturn (inits:(vlookupinfo list)) (e:exp) :voperation list = 
 	let (ops,ln) = makedataflow inits e
 	in (makeoperation (ReturnValue ln)) :: ops
 
@@ -188,7 +188,7 @@ let overwritevariable (v:vvarinfo) (b:int) (w:int) (ol:voperationlink) =
 		| Compound cll -> getrange 0 w cll
 	in (op,Compound (initial @ biddle @ terminal))
 
-let generateset (inits:((string*vinitinfo) list)) (lv:lval) (e:exp) :voperation list =
+let generateset (inits:(vlookupinfo list)) (lv:lval) (e:exp) :voperation list =
 	let (ops,reslink) = makedataflow inits e 
 	in let (extra,resulttype) = match lv with
 		| (Var(v),NoOffset) -> let v1 = generatevariable v
@@ -202,7 +202,7 @@ let generateset (inits:((string*vinitinfo) list)) (lv:lval) (e:exp) :voperation 
 	in  result :: (List.rev_append extra ops)
 
 (* generates operations from a list of Cil instr *)
-let rec makeinstrlist (inits:((string*vinitinfo) list)) (m:vblock) (il:instr list) =
+let rec makeinstrlist (inits:(vlookupinfo list)) (m:vblock) (il:instr list) =
 	match il with
 	| h :: t -> (match h with
 		| Set (lv,e,l) -> 
@@ -237,7 +237,7 @@ let getvblocktype (s:stmt):vblocktype = match s.skind with
 	| _ -> E.s (E.error "Illegal stmt %a.\n" d_stmt s) 
 
 (* generates a module from a Cil stmt *)
-let generateblock (inits:((string*vinitinfo) list)) (v:vvarinfo) (entryid:int) (s:stmt) :vblock = 
+let generateblock (inits:(vlookupinfo list)) (v:vvarinfo) (entryid:int) (s:stmt) :vblock = 
 	let ret = 
 	{
 		bid = s.sid;
@@ -309,14 +309,15 @@ let generatefunmodule (init:(string * vinitinfo) list) (f:fundec) :funmodule =
 	let vardesc = generatedesc f.svar
 	(* identify entry point, and remove some unreachable code *)
 	in let entryid = (extractminentry f.sallstmts)
+	in let globs = List.map (fun (s,i)-> {lookupname=s; initialiser=i; parrallelcount=1}) init
 	(* basic starting point, this needs optimisation 
 	 * and annotation before it is useful*)
 	in let ret = {
 		vdesc = vardesc;
-		vglobals = init;
+		vglobals = globs;
 		vinputs = generatevariables f.sformals;
 		vlocals = generatevariables f.slocals;
-		vblocks = List.map (generateblock init vardesc entryid) f.sallstmts;
+		vblocks = List.map (generateblock globs vardesc entryid) f.sallstmts;
 	}
 	in  (* return *)
 		ret
