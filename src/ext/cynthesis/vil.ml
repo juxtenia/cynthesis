@@ -188,7 +188,7 @@ and vcompelement = {
 }
 
 (** blank schedule to initialise with *)
-let emptyschedule = {earliest = 0; latest = 0; set = 0; assigned = -1; };;
+let emptyschedule = {earliest = 0; latest = 0; set = -1; assigned = -1; };;
 
 let getnewid () = let id = !dataid 
 	in 	dataid:= !dataid + 1; id
