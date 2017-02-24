@@ -149,6 +149,18 @@ let culloperations (f:funmodule) =
 		m.bdataFlowGraph <- compactoperations m.boutputs [] [] m.bdataFlowGraph
 	) f.vblocks;;
 
+let peepholeopts (o:voperation) = match o.operation with
+	| _ -> None
+
+let rec peephole (b:vblock) = 
+	match Listutil.mapfilter peepholeopts b.bdataFlowGraph with
+		| [] -> ()
+		| x -> let (rmids,reps) = List.split x
+			in b.bdataFlowGraph <- List.filter (fun o1 -> not (List.mem o1.oid rmids)) b.bdataFlowGraph;
+				replaceoperations reps b.bdataFlowGraph;
+				replaceconditions reps b.boutputs;
+				peephole b
+
 (** optimising entry point *)
 let optimisefunmodule (f:funmodule) = 
 		(* inter block optimisations *)
@@ -177,7 +189,11 @@ let optimisefunmodule (f:funmodule) =
 		 *)
 		culloperations f;
 
+		(* Constant folding *)
 		List.iter (constfold f.vglobals f.vdesc) f.vblocks;
+
+		(* Various peephole optimisations*)
+		List.iter peephole f.vblocks;
 
 		(* Live variable analysis
 		 * annotates blocks with live variables,
