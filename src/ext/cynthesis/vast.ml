@@ -47,10 +47,13 @@ and vastmodule = {
 	mutable clockedge: vastassignment list;
 		(* the @(posedge clk) block (reset behaviour is added automatically) *)
 }
+and vastinitialiser = 
+	| SINGLE of big_int
+	| ARRAY of vastinitialiser list
 and vastvariable = {
 	mutable name: string;
 		(* variable name *)
-	mutable resetto: big_int;
+	mutable resetto: vastinitialiser;
 		(* value to set in the reset block *)
 	mutable typ: vasttype;
 		(* the variable type *)
@@ -144,10 +147,13 @@ and vastmodule_to_verilog m =
 		^ ");\n" 
 	^ (String.concat "" (List.map 
 			(fun v -> (vastvariable_to_verilog v) ^ ";\n") m.locals))
-	^ "\n    "
+	^ "initial begin\n    "
+		^ (String.concat) "\n    " (Listutil.mapflatten vastvariable_to_initial_assignment m.outputs)
+		^ "\n    "
+		^ (String.concat) "\n    " (Listutil.mapflatten vastvariable_to_initial_assignment m.locals)
+	^ "\nend\n    "
 		^ (String.concat "" (List.map 
 			(fun a -> "assign " ^ (vastassignment_to_verilog a) ^ ";\n    ") m.always))
-
 	^ "\n    always_ff @(posedge clk)\n    if(rst)\n         begin\n            "
 			^ (String.concat "    " (Listutil.mapfilter
 				(fun v -> vastvariable_to_reset_assignment v) m.outputs))
@@ -161,9 +167,26 @@ and vastmodule_to_verilog m =
 	^ "endmodule // end of module " ^ m.modname
 and vastvariable_to_reset_assignment v = 
 	if(isReg v.typ.logictype)
-	then Some (v.name ^ " <= " ^ (string_of_int v.typ.width) ^ "'d" 
-				^ (string_of_big_int v.resetto) ^ ";\n        ")
+	then match vastinitialiser_to_verilog v.resetto with
+				| [s] -> Some (v.name ^ " <= " ^ (string_of_int v.typ.width) ^ "'d" 
+				^ s ^ ";\n        ")
+				| _ -> None
 	else None
+and vastvariable_to_initial_assignment v = 
+	if(isReg v.typ.logictype)
+	then let rec driver s t i = match (t, i) with
+			| ([],SINGLE c) -> [s ^ " = " ^ (string_of_int v.typ.width) ^ "'d" 
+				^ string_of_big_int c ^ ";" ]
+			| (hd::tl,ARRAY il) when List.length il = hd -> List.flatten 
+				(List.mapi 
+					(fun ix ni -> driver (s^"["^string_of_int ix^"]") tl ni) 
+				il)
+			| _ -> E.s(E.error "Incorrect initialiser for %s\n" v.name)
+		in driver v.name v.typ.arraytype v.resetto 
+	else []
+and vastinitialiser_to_verilog i = match i with
+	| SINGLE b -> [string_of_big_int b]
+	| ARRAY il -> List.flatten (List.map vastinitialiser_to_verilog il)
 and vastvariable_to_verilog v = let (b,a) = vasttype_to_verilog v.typ
 	in b ^ v.name ^ a
 and vastconstant_to_verilog c = (string_of_int c.cwidth) ^ "'d" ^ (string_of_big_int c.value)

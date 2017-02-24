@@ -5,14 +5,14 @@ module E = Errormsg
 let defaultrange (v:vastvariable) = VARIABLE { variable = v; range=None; }
 
 let onewidetype l = {width=1; isSigned=false; logictype=l; arraytype=[]; }
-let onewidevar l n = {name=n; resetto=Big_int.zero_big_int; typ=onewidetype l; } 
+let onewidevar l n = {name=n; resetto=SINGLE Big_int.zero_big_int; typ=onewidetype l; } 
 
 let vil_to_vast_type (l:vastlogic) (t:vtype) :vasttype = let te = gettypeelement t 
 	in { width = te.width; isSigned = te.isSigned; logictype = l; arraytype = []; }
 
 let vil_to_vast_variable (l:vastlogic) (v:vvarinfo) :vastvariable = {
 	name = v.varname;
-	resetto = Big_int.zero_big_int;
+	resetto = SINGLE Big_int.zero_big_int;
 	typ = vil_to_vast_type l v.vtype;
 }
 
@@ -80,7 +80,7 @@ let getreturnvariable (r:vastmodule) (bid:int) = getvar r (getreturnvariablename
 let makelvalnorange (n:string) (t:vasttype) = {
 		variable={
 			name = n;
-			resetto = Big_int.zero_big_int;
+			resetto = SINGLE Big_int.zero_big_int;
 			typ = t;
 		};
 		range=None
