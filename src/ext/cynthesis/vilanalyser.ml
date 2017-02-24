@@ -89,7 +89,7 @@ let isunsafeloop (loopdesc:(bool option) list) = match loopdesc with
 	| [Some true; Some false] -> true
 	| _ -> false
 
-let allconst (v:vvarinfo) (bs:vblock list) = match bs with
+let allconstvalue (v:vvarinfo) (bs:vblock list) = match bs with
 	| [] -> None
 	| h::t -> match getconstvalue v h with
 		| Some c -> if List.for_all (fun b -> match getconstvalue v h with 
@@ -157,7 +157,7 @@ let basicloop (f:funmodule) (b:vblock) (loopdesc:(bool option) list) = match loo
 						let loopsucc = blockfromint f cto
 						in let loopids = getallsucessors f b.bid loopsucc
 						in let incrementtristate = allwiththesamedenarii v b.bid [] f Unknown loopsucc
-						in let startvalueoption = allconst v (Listutil.mapfilter (fun c -> match c.connectfrom with
+						in let startvalueoption = allconstvalue v (Listutil.mapfilter (fun c -> match c.connectfrom with
 								| Some i when not (List.mem i loopids) -> Some (blockfromint f i)
 								| _ -> None
 							) b.binputs)
