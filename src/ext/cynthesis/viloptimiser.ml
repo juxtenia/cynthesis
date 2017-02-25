@@ -170,6 +170,7 @@ let optimisefunmodule (f:funmodule) =
 		 * and erase the connections from them in other modules
 		 *)
 		f.vblocks <- removeunreachableblocks f.vblocks;
+		
 		(* intra block optimisations *)
 
 		(* Dead code elimination and duplicate operation removal 
@@ -179,16 +180,13 @@ let optimisefunmodule (f:funmodule) =
 		 * removing surplus ones.
 		 *)
 		culloperations f;
-
 		(* Various peephole optimisations*)
 		List.iter (peephole f.vglobals f.vdesc) f.vblocks;
-
 		(* Live variable analysis
 		 * annotates blocks with live variables,
 		 * removes unnecessary Result (_,_) labels and
 		 * removes unused local variables completely 
 		 *)
 		variablecull f;
-		
 		(* run this again to catch the dead code the variable cull reveals *)
 		culloperations f;
