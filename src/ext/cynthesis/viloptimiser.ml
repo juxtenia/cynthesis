@@ -87,27 +87,6 @@ let variablecull (f:funmodule) =
 			else ()
 		) entry.bvars 
 
-(* Constant folding *)
-
-let rec constfold (inits:vlookupinfo list) (v:vvarinfo) (b:vblock) = 
-	match Listutil.mapfilter (fun o -> 
-		if Vilanalyser.constchildren o
-		then let op = makeoperation (Constant {value=Vilanalyser.evaluate inits o;ctype=gettype v o})
-			in Some((o,op),(o,Simple op))
-		else None
-	) b.bdataFlowGraph
-	with
-		| [] -> ()
-		| x -> 
-			let (ops,reps) = List.split x
-			in let (rm,newops) = List.split ops
-			in let ids = List.map (fun o -> o.oid) rm
-			in  b.bdataFlowGraph <- List.filter (fun o -> not(List.mem o.oid ids)) b.bdataFlowGraph;
-				replaceoperations reps b.bdataFlowGraph;
-				replaceconditions reps b.boutputs;
-				b.bdataFlowGraph <- List.rev_append newops b.bdataFlowGraph;
-				constfold inits v b
-
 (* Dead Code elimination and duplicate operation removal *)
 
 (** remove unreferenced ops, update children, repeat *)
@@ -148,18 +127,30 @@ let culloperations (f:funmodule) =
 	List.iter (fun m ->
 		m.bdataFlowGraph <- compactoperations m.boutputs [] [] m.bdataFlowGraph
 	) f.vblocks;;
+                              
+let peepholeopts (inits:vlookupinfo list) (v:vvarinfo) (o:voperation): 
+(* Some ((ids to remove, ops to add ),  (list of (replace this, with this)) or None *)
+        ((int list * voperation list) * ((voperation * voperationlink) list)) option = 
+	match o.operation with
+		(* constant folding *)
+		| _ when Vilanalyser.constchildren o -> 
+			let op = makeoperation (Constant {value=Vilanalyser.evaluate inits o;ctype=gettype v o})
+			in Some(([o.oid],[op]),[(o,Simple op)])
+		| _ -> None
 
-let peepholeopts (o:voperation) = match o.operation with
-	| _ -> None
-
-let rec peephole (b:vblock) = 
-	match Listutil.mapfilter peepholeopts b.bdataFlowGraph with
+let rec peephole (inits:vlookupinfo list) (v:vvarinfo) (b:vblock) = 
+	match Listutil.mapfilter (peepholeopts inits v) b.bdataFlowGraph with
 		| [] -> ()
-		| x -> let (rmids,reps) = List.split x
+		| x -> let (lists,repls) = List.split x
+			in let (rmls,addls) = List.split lists
+			in let rmids = List.flatten rmls
+			in let additions = List.flatten addls
+			in let reps = List.flatten repls
 			in b.bdataFlowGraph <- List.filter (fun o1 -> not (List.mem o1.oid rmids)) b.bdataFlowGraph;
+				b.bdataFlowGraph <- List.rev_append additions b.bdataFlowGraph;
 				replaceoperations reps b.bdataFlowGraph;
 				replaceconditions reps b.boutputs;
-				peephole b
+				peephole inits v b
 
 (** optimising entry point *)
 let optimisefunmodule (f:funmodule) = 
@@ -189,11 +180,8 @@ let optimisefunmodule (f:funmodule) =
 		 *)
 		culloperations f;
 
-		(* Constant folding *)
-		List.iter (constfold f.vglobals f.vdesc) f.vblocks;
-
 		(* Various peephole optimisations*)
-		List.iter peephole f.vblocks;
+		List.iter (peephole f.vglobals f.vdesc) f.vblocks;
 
 		(* Live variable analysis
 		 * annotates blocks with live variables,
