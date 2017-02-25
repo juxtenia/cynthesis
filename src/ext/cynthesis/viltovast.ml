@@ -142,6 +142,8 @@ let makecontrolvariablesequence (i:int) (r:vastmodule) (m:vblock) =
 		addwirevar r controlendvariable true (VARIABLE lastreg);
 		addregvar r controlfollowvariable false (VARIABLE controlendvariable)
 
+
+
 let makeoperationwirevariable (r:vastmodule) (v:vvarinfo) (m:vblock) (o:voperation) (ov:vastexpression)= 
 	addwirevar r (makelvalnorange (getoperationvariablename m.bid o) 
 		(vil_to_vast_type WIRE (gettype v o))) true ov
@@ -254,8 +256,6 @@ let positive_time_module (r:vastmodule) (v:vvarinfo) (m:vblock) =
 let vil_to_vast_module (r:vastmodule) (v:vvarinfo) (m:vblock) =
 	if iszerotime m
 	then zero_time_module r v m
-	else if maxtime m <= 1
-	then one_clock_module r v m
 	else positive_time_module r v m
 	
 let addclocked (r:vastmodule) (v:vastvariable) (e:vastexpression) = 
