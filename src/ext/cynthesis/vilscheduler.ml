@@ -117,8 +117,7 @@ let rec scheduleiterator ll i acc currentstep todo =
 		| (ts,ntodo) -> match getschedulable ll currentstep ts with
 			| ([],_) -> let (rs,nt) = List.partition (fun o -> 
 					if o.oschedule.earliest<=i 
-					then (E.log "%d -> %d\n" o.oid (i+1);
-						o.oschedule <- setearliest o.oschedule (i+1); true )
+					then (o.oschedule <- setearliest o.oschedule (i+1); true )
 					else false) todo;
 				in  generateasap (rs@acc) nt; 
 					generatealap (List.fold_left (fun a b -> max a b.oschedule.earliest) (* find max time *)
@@ -149,6 +148,7 @@ let rec generateschedule (m:vblock) =
 (* generates schedules for all blocks *)
 let generatescheduleinfo (f:funmodule) = 
 	List.iter (fun m -> 
+		List.iter (fun o -> o.oschedule <- emptyschedule) m.bdataFlowGraph;
 		generateasap [] m.bdataFlowGraph; 
 		generatealap (List.fold_left (fun a b -> max a b.oschedule.earliest) (* find max time *)
 			0 m.bdataFlowGraph) [] m.bdataFlowGraph;

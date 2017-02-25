@@ -13,8 +13,18 @@ let moduleoperationcost (m:vblock) =
 let totaloperationcost (f:funmodule) = 
 	List.fold_left (fun t m -> t + moduleoperationcost m) 0 f.vblocks
 
+let rec lookuparea (i:vinitinfo) = match i with
+	| Const c -> (gettypeelement c.ctype).width
+	| Comp sil -> List.fold_left (fun t (s,i1)-> t + lookuparea i1) 0 sil
+	| Array il -> List.fold_left (fun t i1 -> t + lookuparea i1) 0 il
+
+let totallookuparea (f:funmodule) = 
+	List.fold_left (fun t g -> t + g.parrallelcount * lookuparea g.initialiser) 0 f.vglobals
+
 (** the number of time units needed for a module's operations *)
-let moduletime = maxtime
+let moduletime m = 
+	maxtime m.bdataFlowGraph + 
+	if List.length m.boutputs = 1 then 0 else 1
 
 (** generate balance equations for a function, solve and multiply 
  *  by the module time *)

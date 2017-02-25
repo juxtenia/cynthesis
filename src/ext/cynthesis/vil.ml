@@ -468,6 +468,12 @@ and print_vtypeelement te =
 and print_vcompelement ce = 
 	ce.ename ^ ":" ^ print_vtype ce.etype
 
+let rec baseinittype (i:vinitinfo) = match i with
+	| Const c -> c.ctype
+	| Comp _ 
+	| Array [] -> E.s (E.error "Invalid initialiser\n")
+	| Array (h::_) -> baseinittype h
+
 (** makes operation template from the type *)
 let makeoperation (ot:voperationtype) = 
 	{oid = getnewid (); operation = ot; ousecount = 0; oschedule=emptyschedule}
@@ -620,8 +626,8 @@ let rec gettype (f:vvarinfo) (o:voperation) = match o.operation with
 let functionname (f:funmodule) = f.vdesc.varname
 
 (* gets the latest scheduled item in a vblock *)
-let maxtime (m:vblock) = 
-	List.fold_left (fun a o -> max o.oschedule.set a) 0 m.bdataFlowGraph
+let maxtime (ol:voperation list) = 
+	List.fold_left (fun a o -> max o.oschedule.set a) 0 ol
 	
 (* subroutines to replace operations, useful later *)
 

@@ -2,9 +2,10 @@ open Vil
 open Vast
 module E = Errormsg
 
-let defaultrange (v:vastvariable) = VARIABLE { variable = v; range=None; }
+let defaultrange (v:vastvariable) = VARIABLE { variable = v; range=None; indexing=[]; }
 
 let onewidetype l = {width=1; isSigned=false; logictype=l; arraytype=[]; }
+let siztyfourwidetype l = {width=64; isSigned=false; logictype=l; arraytype=[]; }
 let onewidevar l n = {name=n; resetto=SINGLE Big_int.zero_big_int; typ=onewidetype l; } 
 
 let vil_to_vast_type (l:vastlogic) (t:vtype) :vasttype = let te = gettypeelement t 
@@ -67,6 +68,16 @@ let followcontrol = "follow"
 let getcontrolvariablename (bid:int) (s:string) = Printf.sprintf "control_%d_%s" bid s;;
 let getoperationvariablename (bid:int) (o:voperation) = Printf.sprintf "operation_%d_%d" bid o.oid;;
 let getreturnvariablename (bid:int) = Printf.sprintf "return_%d" bid;;
+let dspmul = "mul"
+let dspdiv = "div"
+let dsprem = "rem"
+let dspinput1 = "input1"
+let dspinput2 = "input2"
+let dspresult = "result"
+let getdspvariablename (mid:int) (s:string) = Printf.sprintf "dsp_%d_%s" mid s;;
+let lookupoutput = "output"
+let lookupenable = "enable"
+let getlookupvariablename (name:string) (mid:int) (s:string) = Printf.sprintf "lookup_%s_%d_%s" name mid s;;
 
 let getinputvariable (r:vastmodule) (bid:int) (v:vvarinfo) = getvar r (getinputvariablename bid v)
 let getinputfollowvariable (r:vastmodule) (bid:int) (v:vvarinfo) = getvar r (getinputfollowvariablename bid v)
@@ -84,7 +95,8 @@ let makelvalnorange (n:string) (t:vasttype) = {
 			resetto = SINGLE Big_int.zero_big_int;
 			typ = t;
 		};
-		range=None
+		range=None;
+		indexing=[];
 	} 
 
 let makeinputvariable (r:vastmodule) (m:vblock) (v:vvarinfo) = 
@@ -122,12 +134,13 @@ let makecontrolvariable (l:vastlogic) (r:vastmodule) (m:vblock) =
 		) (VARIABLE controlendvariable)
 
 let makecontrolvariablesequence (i:int) (r:vastmodule) (m:vblock) = 
-	let controlstartvariable = makelvalnorange (getcontrolvariablename m.bid startcontrol) 
+	let directconnect = List.length m.boutputs = 1
+	in let controlstartvariable = makelvalnorange (getcontrolvariablename m.bid startcontrol) 
 		(onewidetype REG)
 	in let controlstartalias = makelvalnorange (getcontrolvariablename m.bid (string_of_int 0))
 		(onewidetype WIRE)	
 	in let controlendvariable = makelvalnorange (getcontrolvariablename m.bid endcontrol) 
-		(onewidetype WIRE)
+		(onewidetype (if directconnect then WIRE else REG))
 	in let controlfollowvariable = makelvalnorange (getcontrolvariablename m.bid followcontrol)
 		(onewidetype REG)
 	in let rec driver j p = if j >= i then p else(
@@ -139,10 +152,86 @@ let makecontrolvariablesequence (i:int) (r:vastmodule) (m:vblock) =
 	in let lastreg = driver 1 controlstartvariable
 	in 	addvar r controlstartvariable;
 		addwirevar r controlstartalias true (VARIABLE controlstartvariable);
-		addwirevar r controlendvariable true (VARIABLE lastreg);
+		addwirevar r controlendvariable directconnect (VARIABLE lastreg);
 		addregvar r controlfollowvariable false (VARIABLE controlendvariable)
 
+let makedspblock (r:vastmodule) (mid:int) =
+	let input1 = makelvalnorange (getdspvariablename mid dspinput1) 
+		(siztyfourwidetype WIRE)
+	in let input2 = makelvalnorange (getdspvariablename mid dspinput2) 
+		(siztyfourwidetype WIRE)
+	in let result = makelvalnorange (getdspvariablename mid dspresult) 
+		(siztyfourwidetype REG)
+	in let mul = makelvalnorange (getdspvariablename mid dspmul) 
+		(siztyfourwidetype WIRE)
+	in let div = makelvalnorange (getdspvariablename mid dspdiv)
+		(siztyfourwidetype WIRE)
+	in let rem = makelvalnorange (getdspvariablename mid dsprem) 
+		(siztyfourwidetype WIRE)
+	in  addvar r input1;
+		addvar r input2;
+		addvar r mul;
+		addvar r div;
+		addvar r rem;
+		addregvar r result false (
+			TERNARY (VARIABLE mul, BINARY (MULT, VARIABLE input1, VARIABLE input2), 
+			TERNARY (VARIABLE div, BINARY (DIV, VARIABLE input1, VARIABLE input2), 
+			TERNARY (VARIABLE rem, BINARY (MOD, VARIABLE input1, VARIABLE input2), 
+			VARIABLE result
+		))))
 
+let rec makedsps (r:vastmodule) (n:int) = if n = 0 then ()
+	else (makedspblock r (n-1); makedsps r (n-1))
+
+let rec makearraytype (i:vinitinfo) = match i with
+	| Const _ -> []
+	| Comp _ -> []
+	| Array [] -> E.s (E.error "Invalid initialiser\n")
+	| Array (h::t) -> (1 + List.length t) :: (makearraytype h)
+
+let witharray (v:vasttype) (at:int list) = 
+	{width = v.width; isSigned = v.isSigned; logictype = v.logictype; arraytype = at;}
+
+let rec vil_to_vast_initialiser (i:vinitinfo) = match i with
+	| Const c -> SINGLE c.value
+	| Comp _ 
+	| Array [] -> E.s (E.error "Invalid initialiser\n")
+	| Array l -> ARRAY (List.map vil_to_vast_initialiser l)
+
+let makelookupblock (r:vastmodule) (mid:int) (l:vlookupinfo) = 
+	let viltype = baseinittype l.initialiser
+	in let arraytype = makearraytype l.initialiser
+	in let returntype = vil_to_vast_type REG viltype
+	in let lookuptype = witharray returntype arraytype
+	in let lookup = {
+		variable={
+			name = l.lookupname;
+			resetto = vil_to_vast_initialiser l.initialiser;
+			typ = lookuptype;
+		};
+		range=None;
+		indexing=[]; 
+	}
+	in let output = makelvalnorange (getlookupvariablename l.lookupname mid lookupoutput) 
+		returntype
+	in let enable = makelvalnorange (getlookupvariablename l.lookupname mid lookupenable)
+		(onewidetype WIRE)
+	in let inputs = List.mapi (fun i a -> 
+			makelvalnorange (getlookupvariablename l.lookupname mid (string_of_int i)) 
+				{width=a;isSigned=false;logictype=WIRE;arraytype=[]}
+		) arraytype
+	in  List.iter (fun l -> addvar r l) inputs;
+		addregvar r output false (TERNARY (VARIABLE enable,VARIABLE {
+			variable=lookup.variable; 
+			range=None;
+			indexing=List.map (fun l -> VARIABLE l) inputs;
+		},VARIABLE output))
+
+let makelookup (r:vastmodule) (l:vlookupinfo) =
+	let rec driver i = 
+		if i = 0 then ()
+		else (makelookupblock r (i-1) l; driver (i-1))
+	in driver l.parrallelcount
 
 let makeoperationwirevariable (r:vastmodule) (v:vvarinfo) (m:vblock) (o:voperation) (ov:vastexpression)= 
 	addwirevar r (makelvalnorange (getoperationvariablename m.bid o) 
@@ -161,7 +250,11 @@ let makereturnwirevariable (r:vastmodule) (v:vvarinfo) (m:vblock) (o:vastexpress
 		(vil_to_vast_type WIRE v.vtype)) true o
 
 let refertocomplink (r:vastmodule) (bid:int) (cl:vcomplink) = 
-	VARIABLE {variable=getoperationvariable r bid cl.loperation; range=Some(cl.lbase+cl.lwidth-1,cl.lbase)}
+	VARIABLE {
+		variable=getoperationvariable r bid cl.loperation; 
+		range=Some(cl.lbase+cl.lwidth-1,cl.lbase);
+		indexing=[];
+	}
 
 let refertooperation (r:vastmodule) (bid:int) (ol:voperationlink) = match ol with
 	| Simple o -> defaultrange (getoperationvariable r bid o)
@@ -194,7 +287,7 @@ let makeoperationwire (r:vastmodule) (v:vvarinfo) (m:vblock) (o:voperation) = ma
 	| Constant _-> makeoperation r v m o
 
 let makeanoperation (r:vastmodule) (v:vvarinfo) (m:vblock) (o:voperation) = 
-	if maxtime m = o.oschedule.set && List.exists (fun o1 -> o1.oid=o.oid) 
+	if maxtime m.bdataFlowGraph = o.oschedule.set && List.exists (fun o1 -> o1.oid=o.oid) 
 		(Listutil.mapflatten getlinkchildren (getswitches m))
 	then makeoperationwire r v m o
 	else makeoperation r v m o
@@ -212,7 +305,7 @@ let rec makeoperations (makeop:vastmodule -> vvarinfo -> vblock -> voperation ->
 		else makeoperations makeop r v m acc (h::skip) t
 
 let iszerotime (m:vblock) = 
-	maxtime m = 0 && List.length m.boutputs < 2
+	maxtime m.bdataFlowGraph = 0 && List.length m.boutputs < 2
 
 let zero_time_module (r:vastmodule) (v:vvarinfo) (m:vblock) =
 	List.iter (makeinputvariable r m) m.bvars;
@@ -226,7 +319,7 @@ let zero_time_module (r:vastmodule) (v:vvarinfo) (m:vblock) =
 
 let positive_time_module (r:vastmodule) (v:vvarinfo) (m:vblock) =
 	List.iter (makeinputvariable r m) m.bvars;
-	makecontrolvariablesequence (maxtime m) r m;
+	makecontrolvariablesequence (maxtime m.bdataFlowGraph) r m;
 	makeoperations makeanoperation r v m [] [] m.bdataFlowGraph;
 	let remainingoutputvars = List.filter (fun v -> not (hasvariableresult v m.bdataFlowGraph)) m.bvarexports
 	in  List.iter (fun v -> 
@@ -240,11 +333,11 @@ let vil_to_vast_module (r:vastmodule) (v:vvarinfo) (m:vblock) =
 	else positive_time_module r v m
 	
 let addclocked (r:vastmodule) (v:vastvariable) (e:vastexpression) = 
-	r.clockedge <- { var={ variable=v; range=None; };
+	r.clockedge <- { var={ variable=v; range=None; indexing=[];};
 		assign=e; blocking=false; } :: r.clockedge
 
 let addalways (r:vastmodule) (v:vastvariable) (e:vastexpression) = 
-	r.always <- { var={ variable=v; range=None; };
+	r.always <- { var={ variable=v; range=None; indexing=[];};
 		assign=e; blocking=true; } :: r.always
 
 let startinput = "start"
@@ -342,10 +435,12 @@ let vil_to_vast (f:funmodule):vastmodule =
 		outputs = readycontrol :: resultoutput :: [];
 		locals = startfollowcontrol :: [];
 		always = [];
-		clockedge = {var={variable=startfollowcontrol; range=None; }; 
+		clockedge = {var={variable=startfollowcontrol; range=None; indexing=[];}; 
 			assign=defaultrange startcontrol; blocking=false; } :: [];
 	}
-	in  List.iter (vil_to_vast_module ret f.vdesc) f.vblocks;
+	in  List.iter (makelookup ret) f.vglobals;
+		makedsps ret !Vilscheduler.dspcount;
+		List.iter (vil_to_vast_module ret f.vdesc) f.vblocks;
 		List.iter (vil_to_vast_connections ret) f.vblocks;
 		returnconnections ret f;
 		ret;;

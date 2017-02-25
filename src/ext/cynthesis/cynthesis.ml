@@ -41,7 +41,8 @@ let funtomodule (inits:((string*vinitinfo) list)) (f:fundec) =
 		(* print more readable module printout *)
   		if(!printflags land 16 <> 0) then E.log("%s\n") (print_funmodule ret) else ();
   		(* print optimiser metrics *)
-  		if(!printflags land 64 <> 0) then E.log("Opcost: %d, Timecost: %f, Loops: [%s]\n") 
+  		if(!printflags land 64 <> 0) then E.log("Lookupcost: %d, Opcost: %d, Timecost: %f, Loops: [%s]\n") 
+  			(Vilevaluator.totallookuparea ret)
   			(Vilevaluator.totaloperationcost ret)
   			(Vilevaluator.weightedtimecost ret)
   			(String.concat ", " (Listutil.mapfilter (Vilanalyser.loopinfo ret) ret.vblocks))

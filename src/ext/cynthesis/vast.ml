@@ -92,6 +92,8 @@ and vastlval = {
 		(* the variable *)
 	mutable range: (int * int) option;
 		(* options bit range *)
+	mutable indexing: vastexpression list;
+		(* the indexes into the array type *)
 }
 and vastexpression = 
 	| CONST of vastconstant (* represents a constant *)
@@ -205,9 +207,11 @@ and vastassignment_to_verilog a =
 	^ (if a.blocking then " = " else " <= ")
 	^ (vastexpression_to_verilog a.assign)
 and vastlval_to_verilog l = 
-	l.variable.name ^ (match l.range with
-	| None -> ""
-	| Some (i,j) -> "[" ^ (string_of_int i) ^ ":" ^ (string_of_int j) ^ "]")
+	l.variable.name ^ 
+	String.concat "" (List.map (fun e -> "[" ^ vastexpression_to_verilog e ^ "]") l.indexing)
+	^ (match l.range with
+		| None -> ""
+		| Some (i,j) -> "[" ^ (string_of_int i) ^ ":" ^ (string_of_int j) ^ "]")
 and vastexpression_to_verilog e = "(" ^ (match e with
 		| CONST c -> vastconstant_to_verilog c
 		| VARIABLE l -> vastlval_to_verilog l

@@ -8,6 +8,7 @@ let domoduleprint = ref false
 type optimisationtype =
 	| ConditionalExpansion
 	| LoopFlatten
+	| LookupExpand
 
 type optimisation = {
 	blockid: int;
@@ -20,6 +21,7 @@ type optimisation = {
 let string_of_optimisationtype ot = match ot with
 	| ConditionalExpansion -> "ConditionalExpansion"
 	| LoopFlatten -> "LoopFlatten"
+	| LookupExpand -> "LookupExpand"
 
 (** turns optimisation into a simple string representation *)
 let string_of_optimisation o = "(" ^ string_of_int o.blockid ^ "," ^ string_of_optimisationtype o.desc ^ ")"
@@ -125,12 +127,38 @@ let getloopflattens (f:funmodule) = Listutil.mapfilter (fun b ->
 		)
 ) f.vblocks
 
+let getlookupaddition (f:funmodule) = let name = ref "" in
+try [Listutil.findfilter 
+	( fun b ->
+		if List.exists (fun o -> match o.operation with
+			| Lookup(s,_,_) when maxtime (getchildren o) + 1 < o.oschedule.set
+			-> name := s; true
+			| _ -> false
+		) b.bdataFlowGraph
+		then Some {
+			blockid = b.bid;
+			desc = LoopFlatten;
+			estimatedvalue = 1;
+			apply = (fun (f:funmodule) -> 
+				List.iter (fun g -> 
+					if g.lookupname = !name 
+					then g.parrallelcount <- g.parrallelcount + 1
+					else ()
+				) f.vglobals;
+				f
+			)
+		}
+		else None
+	) f.vblocks]
+with | Not_found -> []
+
 (** Gives the possible optimisation steps for f *)
 let getpossibleoptimisations (f:funmodule) = 
 	List.flatten
 	[ 
 		getconditionalexpansions f;
 		getloopflattens f;
+		getlookupaddition f;
 	]
 
 
@@ -154,17 +182,22 @@ let orderoptimisations  (f:funmodule) (os:optimisation list) =
 (** Applies the optimisation to f *)
 let applyoptimisation (f:funmodule) (o) = o.apply f
 
-let opcostweight = 5.
-let timecostweight = 10.
+let opcostweight = 10.
+let timecostweight = 200.
+let lookupcostweight = 0.01
 
 (** Evaluates how good a module is *)
 let evaluate (f:funmodule) = 
 	Vilscheduler.generatescheduleinfo f;
 	let opcost = float_of_int (totaloperationcost f)
+	in let lookupcost = float_of_int (totallookuparea f)
 	in let timecost = weightedtimecost f
-	in let totalcost = opcostweight *. opcost +. timecostweight *. timecost
+	in let totalcost = 
+		lookupcostweight *. lookupcost +. 
+		opcostweight *. opcost +. 
+		timecostweight *. timecost
 	in if !verbose 
-			then (E.log "Opcost = %f, Timecost = %f, Totalcost = %f\n" opcost timecost totalcost) 
+			then (E.log "Lookupcost = %f, Opcost = %f, Timecost = %f, Totalcost = %f\n" lookupcost opcost timecost totalcost) 
 			else ()
 		;
 		totalcost

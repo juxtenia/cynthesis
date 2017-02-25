@@ -136,6 +136,8 @@ let peepholeopts (inits:vlookupinfo list) (v:vvarinfo) (o:voperation):
 		| _ when Vilanalyser.constchildren o -> 
 			let op = makeoperation (Constant {value=Vilanalyser.evaluate inits o;ctype=gettype v o})
 			in Some(([o.oid],[op]),[(o,Simple op)])
+		| Unary (Cast,Simple o1,t) when eq_type (gettype v o1) t 
+			-> Some(([o.oid],[]),[(o,Simple o1)])
 		| _ -> None
 
 let rec peephole (inits:vlookupinfo list) (v:vvarinfo) (b:vblock) = 
@@ -170,7 +172,7 @@ let optimisefunmodule (f:funmodule) =
 		 * and erase the connections from them in other modules
 		 *)
 		f.vblocks <- removeunreachableblocks f.vblocks;
-		
+
 		(* intra block optimisations *)
 
 		(* Dead code elimination and duplicate operation removal 
