@@ -167,10 +167,10 @@ and vastmodule_to_verilog m =
 	^ "endmodule // end of module " ^ m.modname
 and vastvariable_to_reset_assignment v = 
 	if(isReg v.typ.logictype)
-	then match vastinitialiser_to_verilog v.resetto with
-				| [s] -> Some (v.name ^ " <= " ^ (string_of_int v.typ.width) ^ "'d" 
-				^ s ^ ";\n        ")
-				| _ -> None
+	then match v.resetto with
+		| SINGLE c -> Some (v.name ^ " <= " ^ (string_of_int v.typ.width) ^ "'d" 
+			^ string_of_big_int c ^ ";\n        ")
+		| _ -> None
 	else None
 and vastvariable_to_initial_assignment v = 
 	if(isReg v.typ.logictype)
