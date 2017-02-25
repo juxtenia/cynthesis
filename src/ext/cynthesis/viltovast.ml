@@ -210,7 +210,7 @@ let makelookupblock (r:vastmodule) (mid:int) (l:vlookupinfo) =
 	in let lookuptype = witharray returntype arraytype
 	in let lookup = {
 		variable={
-			name = l.lookupname;
+			name = l.lookupname ^ "_" ^ string_of_int mid;
 			resetto = vil_to_vast_initialiser l.initialiser;
 			typ = lookuptype;
 		};
@@ -226,6 +226,8 @@ let makelookupblock (r:vastmodule) (mid:int) (l:vlookupinfo) =
 				{width=a;isSigned=false;logictype=WIRE;arraytype=[]}
 		) arraytype
 	in  List.iter (fun l -> addvar r l) inputs;
+		addvar r enable;
+		addvar r lookup;
 		addregvar r output false (TERNARY (VARIABLE enable,VARIABLE {
 			variable=lookup.variable; 
 			range=None;
@@ -508,10 +510,10 @@ let vil_to_vast (f:funmodule):vastmodule =
 			assign=defaultrange startcontrol; blocking=false; } :: [];
 	}
 	in  List.iter (makelookup ret) f.vglobals;
-		makedsps ret !Vilscheduler.dspcount;
+		if !dodsp then makedsps ret !Vilscheduler.dspcount else ();
 		List.iter (vil_to_vast_module ret f.vdesc) f.vblocks;
 		List.iter (vil_to_vast_connections ret) f.vblocks;
 		returnconnections ret f;
 		List.iter (lookupconnections ret f) f.vglobals;
-		dspconnections ret f !Vilscheduler.dspcount;
+		if !dodsp then dspconnections ret f !Vilscheduler.dspcount else ();
 		ret;;

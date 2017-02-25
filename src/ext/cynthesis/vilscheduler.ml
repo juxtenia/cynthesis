@@ -11,12 +11,15 @@ type operationclass =
 
 let dspcount = ref 10
 
+let dodsp = ref true
+
 let getclass (o:voperation) = match o.operation with
 	| Lookup(v,_,_) -> Lookup v
 	| Binary(Mult,o1,o2,t)
 	| Binary(Div,o1,o2,t)
 	| Binary(Mod,o1,o2,t) 
-		when not (allconst (getlinkchildren o1)) &&
+		when !dodsp &&
+			not (allconst (getlinkchildren o1)) &&
 			not (allconst (getlinkchildren o2))
 		-> DSP
 	| _ -> Notcounted
@@ -147,6 +150,8 @@ let rec generateschedule (m:vblock) =
 
 (* generates schedules for all blocks *)
 let generatescheduleinfo (f:funmodule) = 
+	dodsp := List.length (Listutil.mapflatten (fun b -> 
+		List.filter (fun o -> getclass o = DSP) b.bdataFlowGraph) f.vblocks) > !dspcount;
 	List.iter (fun m -> 
 		List.iter (fun o -> o.oschedule <- emptyschedule) m.bdataFlowGraph;
 		generateasap [] m.bdataFlowGraph; 
