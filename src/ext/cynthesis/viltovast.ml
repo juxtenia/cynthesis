@@ -287,10 +287,7 @@ let makeoperationwire (r:vastmodule) (v:vvarinfo) (m:vblock) (o:voperation) = ma
 	| Constant _-> makeoperation r v m o
 
 let makeanoperation (r:vastmodule) (v:vvarinfo) (m:vblock) (o:voperation) = 
-	if maxtime m.bdataFlowGraph = o.oschedule.set && List.exists (fun o1 -> o1.oid=o.oid) 
-		(Listutil.mapflatten getlinkchildren (getswitches m))
-	then makeoperationwire r v m o
-	else makeoperation r v m o
+	makeoperation r v m o
 
 let rec makeoperations (makeop:vastmodule -> vvarinfo -> vblock -> voperation -> unit) 
 	(r:vastmodule) (v:vvarinfo) (m:vblock) (acc:voperation list) 
