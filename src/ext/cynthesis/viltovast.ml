@@ -294,8 +294,14 @@ let makeoperationwire (r:vastmodule) (v:vvarinfo) (m:vblock) (o:voperation) = ma
 	| Constant _-> makeoperation r v m o
 
 let makeanoperation (r:vastmodule) (v:vvarinfo) (m:vblock) (o:voperation) = match getclass o with
-	| DSP -> makeoperationregvariable r v m o (defaultrange (getdspresultvariable r o.oschedule.assigned))
-	| Lookup s -> makeoperationregvariable r v m o (defaultrange (getlookupresultvariable r s o.oschedule.assigned))
+	| DSP -> let cvar = defaultrange (getcontrolvariablei r m.bid (o.oschedule.set -1))
+	in let ovar = makelvalnorange (getoperationvariablename m.bid o) (vil_to_vast_type REG (gettype v o))
+	in addregvar r ovar false
+		(TERNARY (cvar,defaultrange (getdspresultvariable r o.oschedule.assigned),VARIABLE ovar))
+	| Lookup s -> let cvar = defaultrange (getcontrolvariablei r m.bid (o.oschedule.set -1))
+	in let ovar = makelvalnorange (getoperationvariablename m.bid o) (vil_to_vast_type REG (gettype v o))
+	in addregvar r ovar false
+		(TERNARY (cvar,defaultrange (getlookupresultvariable r s o.oschedule.assigned),VARIABLE ovar))
 	| Notcounted -> makeoperation r v m o
 
 let rec makeoperations (makeop:vastmodule -> vvarinfo -> vblock -> voperation -> unit) 
