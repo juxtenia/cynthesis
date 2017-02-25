@@ -175,7 +175,7 @@ and vastvariable_to_reset_assignment v =
 		| _ -> None
 	else None
 and vastvariable_to_initial_assignment v = 
-	if(isReg v.typ.logictype)
+	if(isReg v.typ.logictype && v.typ.arraytype <> [])
 	then let rec driver s t i = match (t, i) with
 			| ([],SINGLE c) -> [s ^ " = " ^ (string_of_int v.typ.width) ^ "'d" 
 				^ string_of_big_int c ^ ";" ]
