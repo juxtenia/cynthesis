@@ -41,3 +41,11 @@ let mapflatten f l =
  		| [] -> raise Not_found
  		| h :: t -> if h = v then i else driver (i+1) t
  	in driver 0 l
+
+(** Gives c n times in a list *)
+let ntimes c n = 
+	let rec driver acc n1 = 
+		if n1 = 0 
+		then acc 
+		else driver (c::acc) (n1-1)
+	in driver [] n

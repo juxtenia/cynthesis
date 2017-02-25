@@ -1,4 +1,5 @@
 open Vil
+open Vilscheduler
 open Vast
 module E = Errormsg
 
@@ -7,6 +8,8 @@ let defaultrange (v:vastvariable) = VARIABLE { variable = v; range=None; indexin
 let onewidetype l = {width=1; isSigned=false; logictype=l; arraytype=[]; }
 let siztyfourwidetype l = {width=64; isSigned=false; logictype=l; arraytype=[]; }
 let onewidevar l n = {name=n; resetto=SINGLE Big_int.zero_big_int; typ=onewidetype l; } 
+
+let zeroconst = {value = Big_int.zero_big_int; cwidth=1;}
 
 let vil_to_vast_type (l:vastlogic) (t:vtype) :vasttype = let te = gettypeelement t 
 	in { width = te.width; isSigned = te.isSigned; logictype = l; arraytype = []; }
@@ -88,6 +91,8 @@ let getcontrolvariablei (r:vastmodule) (bid:int) (s:int) = getvar r (getcontrolv
 let getcontrolfollowvariable (r:vastmodule) (bid:int) = getvar r (getcontrolvariablename bid followcontrol)
 let getoperationvariable (r:vastmodule) (bid:int) (o:voperation) = getvar r (getoperationvariablename bid o)
 let getreturnvariable (r:vastmodule) (bid:int) = getvar r (getreturnvariablename bid)
+let getdspresultvariable (r:vastmodule) (mid:int) = getvar r (getdspvariablename mid dspresult)
+let getlookupresultvariable (r:vastmodule) (name:string) (mid:int) = getvar r (getlookupvariablename name mid lookupoutput)
 
 let makelvalnorange (n:string) (t:vasttype) = {
 		variable={
@@ -286,8 +291,10 @@ let makeoperationwire (r:vastmodule) (v:vvarinfo) (m:vblock) (o:voperation) = ma
 	| Variable _ 
 	| Constant _-> makeoperation r v m o
 
-let makeanoperation (r:vastmodule) (v:vvarinfo) (m:vblock) (o:voperation) = 
-	makeoperation r v m o
+let makeanoperation (r:vastmodule) (v:vvarinfo) (m:vblock) (o:voperation) = match getclass o with
+	| DSP -> makeoperationregvariable r v m o (defaultrange (getdspresultvariable r o.oschedule.assigned))
+	| Lookup s -> makeoperationregvariable r v m o (defaultrange (getlookupresultvariable r s o.oschedule.assigned))
+	| Notcounted -> makeoperation r v m o
 
 let rec makeoperations (makeop:vastmodule -> vvarinfo -> vblock -> voperation -> unit) 
 	(r:vastmodule) (v:vvarinfo) (m:vblock) (acc:voperation list) 
@@ -337,10 +344,75 @@ let addalways (r:vastmodule) (v:vastvariable) (e:vastexpression) =
 	r.always <- { var={ variable=v; range=None; indexing=[];};
 		assign=e; blocking=true; } :: r.always
 
+let dspconnection (r:vastmodule) (f:funmodule) (n:int) = 
+	let (mul_e,div_e,mod_e) = List.fold_left (fun e b ->
+		List.fold_left (fun (emu,ed,emo) o -> if o.oschedule.assigned = n
+			then match o.operation with
+				| Binary(Mult,o1,o2,_) when not (allconst (getlinkchildren o1)) &&
+					not (allconst (getlinkchildren o2))
+				-> (BINARY(LOR,defaultrange (getcontrolvariablei r b.bid (o.oschedule.set -1)),emu),ed,emo)
+				| Binary(Div,o1,o2,_) when not (allconst (getlinkchildren o1)) &&
+					not (allconst (getlinkchildren o2))
+				-> (emu,BINARY(LOR,defaultrange (getcontrolvariablei r b.bid (o.oschedule.set -1)),ed),emo)
+				| Binary(Mod,o1,o2,_) when not (allconst (getlinkchildren o1)) &&
+					not (allconst (getlinkchildren o2))
+				-> (emu,ed,BINARY(LOR,defaultrange (getcontrolvariablei r b.bid (o.oschedule.set -1)),emo))
+				| _ -> (emu,ed,emo)
+			else (emu,ed,emo)
+		) e b.bdataFlowGraph ) 
+		(CONST zeroconst, CONST zeroconst, CONST zeroconst) 
+		f.vblocks
+	in  addalways r (getvar r (getdspvariablename n dspmul)) mul_e;
+		addalways r (getvar r (getdspvariablename n dspdiv)) div_e;
+		addalways r (getvar r (getdspvariablename n dsprem)) mod_e;
+	let (input1_e,input2_e) = List.fold_left (fun e b -> 
+		List.fold_left (fun (e1,e2) o -> if o.oschedule.assigned = n
+			then match (getclass o,o.operation) with
+				| (DSP,Binary(_,o1,o2,_)) -> 
+					let cvar = defaultrange (getcontrolvariablei r b.bid (o.oschedule.set -1))
+					in (TERNARY (cvar,refertooperation r b.bid o1,e1),
+						TERNARY (cvar,refertooperation r b.bid o2,e2))
+				| _ -> (e1,e2)
+			else (e1,e2)
+		) e b.bdataFlowGraph ) 
+		(CONST zeroconst, CONST zeroconst) 
+		f.vblocks
+	in  addalways r (getvar r (getdspvariablename n dspinput1)) input1_e;
+		addalways r (getvar r (getdspvariablename n dspinput2)) input2_e
+
+let rec dspconnections (r:vastmodule) (f:funmodule) (n:int) = if n = 0 then ()
+	else (dspconnection r f (n-1); dspconnections r f (n-1))
+
+let rec lookupconnection (r:vastmodule) (f:funmodule) (l:vlookupinfo) (n:int) =
+	let width = List.length (makearraytype l.initialiser)
+	in let (input_e_list,enable_e) = List.fold_left (fun e b -> 
+		List.fold_left (fun (e1l,e2) o -> if o.oschedule.assigned = n
+			then match (getclass o,o.operation) with
+				| (Lookup _,Lookup(s,oll,_)) when s = l.lookupname
+				-> let cvar = defaultrange (getcontrolvariablei r b.bid (o.oschedule.set -1))
+					in (List.map2 (fun o1 e1 ->
+						TERNARY(cvar,refertooperation r b.bid o1,e1)
+						) oll e1l,
+						BINARY (LOR,cvar,e2))
+				| _ -> (e1l,e2)
+			else (e1l,e2)
+		) e b.bdataFlowGraph ) 
+		(Listutil.ntimes (CONST zeroconst) width, CONST zeroconst) 
+		f.vblocks
+	in  List.iteri (fun i e -> 
+			addalways r (getvar r (getlookupvariablename l.lookupname n (string_of_int i))) e
+		) input_e_list;
+		addalways r (getvar r (getlookupvariablename l.lookupname n lookupenable)) enable_e
+
+let lookupconnections (r:vastmodule) (f:funmodule) (l:vlookupinfo) = 
+	let rec driver n = 
+		if n = 0 then ()
+		else (lookupconnection r f l (n-1); driver (n-1))
+	in driver l.parrallelcount
+
 let startinput = "start"
 let startfollow = "startfollow"
 let finishoutput = "finish"
-let zeroconst = {value = Big_int.zero_big_int; cwidth=1;}
 
 let getexpfromconnection (r:vastmodule) (c:vconnection) = match c with
 	| {connectfrom=None;} -> 
@@ -440,4 +512,6 @@ let vil_to_vast (f:funmodule):vastmodule =
 		List.iter (vil_to_vast_module ret f.vdesc) f.vblocks;
 		List.iter (vil_to_vast_connections ret) f.vblocks;
 		returnconnections ret f;
+		List.iter (lookupconnections ret f) f.vglobals;
+		dspconnections ret f !Vilscheduler.dspcount;
 		ret;;
