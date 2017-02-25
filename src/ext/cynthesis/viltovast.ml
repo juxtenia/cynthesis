@@ -73,6 +73,7 @@ let getinputfollowvariable (r:vastmodule) (bid:int) (v:vvarinfo) = getvar r (get
 let getoutputvariable (r:vastmodule) (bid:int) (v:vvarinfo) = getvar r (getoutputvariablename bid v)
 let getcontrolstartvariable (r:vastmodule) (bid:int) = getvar r (getcontrolvariablename bid startcontrol)
 let getcontrolendvariable (r:vastmodule) (bid:int) = getvar r (getcontrolvariablename bid endcontrol)
+let getcontrolvariablei (r:vastmodule) (bid:int) (s:int) = getvar r (getcontrolvariablename bid (string_of_int s))
 let getcontrolfollowvariable (r:vastmodule) (bid:int) = getvar r (getcontrolvariablename bid followcontrol)
 let getoperationvariable (r:vastmodule) (bid:int) (o:voperation) = getvar r (getoperationvariablename bid o)
 let getreturnvariable (r:vastmodule) (bid:int) = getvar r (getreturnvariablename bid)
@@ -104,11 +105,14 @@ let makeoutputwirevariable (r:vastmodule) (m:vblock) (v:vvarinfo) (o:vastexpress
 let makecontrolvariable (l:vastlogic) (r:vastmodule) (m:vblock) = 
 	let controlstartvariable = makelvalnorange (getcontrolvariablename m.bid startcontrol) 
 		(onewidetype l)
+	in let controlstartalias = makelvalnorange (getcontrolvariablename m.bid (string_of_int 0))
+		(onewidetype WIRE)
 	in let controlendvariable = makelvalnorange (getcontrolvariablename m.bid endcontrol) 
 		(onewidetype WIRE)
 	in let controlfollowvariable = makelvalnorange (getcontrolvariablename m.bid followcontrol)
 		(onewidetype REG)
 	in  addvar r controlstartvariable;
+		addwirevar r controlstartalias true (VARIABLE controlstartvariable);
 		addwirevar r controlendvariable true (VARIABLE controlstartvariable);
 		addregvar r controlfollowvariable (match l with
 			| WIRE -> true
@@ -120,6 +124,8 @@ let makecontrolvariable (l:vastlogic) (r:vastmodule) (m:vblock) =
 let makecontrolvariablesequence (i:int) (r:vastmodule) (m:vblock) = 
 	let controlstartvariable = makelvalnorange (getcontrolvariablename m.bid startcontrol) 
 		(onewidetype REG)
+	in let controlstartalias = makelvalnorange (getcontrolvariablename m.bid (string_of_int 0))
+		(onewidetype WIRE)	
 	in let controlendvariable = makelvalnorange (getcontrolvariablename m.bid endcontrol) 
 		(onewidetype WIRE)
 	in let controlfollowvariable = makelvalnorange (getcontrolvariablename m.bid followcontrol)
@@ -132,6 +138,7 @@ let makecontrolvariablesequence (i:int) (r:vastmodule) (m:vblock) =
 	)
 	in let lastreg = driver 1 controlstartvariable
 	in 	addvar r controlstartvariable;
+		addwirevar r controlstartalias true (VARIABLE controlstartvariable);
 		addwirevar r controlendvariable true (VARIABLE lastreg);
 		addregvar r controlfollowvariable false (VARIABLE controlendvariable)
 
