@@ -193,15 +193,6 @@ let makeoperationwire (r:vastmodule) (v:vvarinfo) (m:vblock) (o:voperation) = ma
 	| Variable _ 
 	| Constant _-> makeoperation r v m o
 
-let makeoperationlatchvariables (r:vastmodule) (v:vvarinfo) (m:vblock) (o:voperation) = match o.operation with
-	| ReturnValue o1 -> makereturnregvariable r v m (refertooperation r m.bid o1)
-	| Result(var,_,_,o1) -> makeoutputregvariable r m var (refertooperation r m.bid o1)
-	| Variable _ 
-	| Constant _
-	| Unary (_,_,_) 
-	| Binary(_,_,_,_) 
-	| Ternary(_,_,_,_) -> makeoperationwire r v m o
-
 let makeanoperation (r:vastmodule) (v:vvarinfo) (m:vblock) (o:voperation) = 
 	if maxtime m = o.oschedule.set && List.exists (fun o1 -> o1.oid=o.oid) 
 		(Listutil.mapflatten getlinkchildren (getswitches m))
@@ -230,16 +221,6 @@ let zero_time_module (r:vastmodule) (v:vvarinfo) (m:vblock) =
 	let remainingoutputvars = List.filter (fun v -> not (hasvariableresult v m.bdataFlowGraph)) m.bvarexports
 	in  List.iter (fun v -> 
 			makeoutputwirevariable r m v (
-				defaultrange (getinputvariable r m.bid v)
-			)) remainingoutputvars	
-
-let one_clock_module (r:vastmodule) (v:vvarinfo) (m:vblock) =
-	List.iter (makeinputvariable r m) m.bvars;
-	makecontrolvariable REG r m;
-	makeoperations makeoperationlatchvariables r v m [] [] m.bdataFlowGraph;
-	let remainingoutputvars = List.filter (fun v -> not (hasvariableresult v m.bdataFlowGraph)) m.bvarexports
-	in  List.iter (fun v -> 
-			makeoutputregvariable r m v (
 				defaultrange (getinputvariable r m.bid v)
 			)) remainingoutputvars	
 
