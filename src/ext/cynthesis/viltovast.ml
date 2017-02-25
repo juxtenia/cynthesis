@@ -294,14 +294,18 @@ let makeoperationwire (r:vastmodule) (v:vvarinfo) (m:vblock) (o:voperation) = ma
 	| Constant _-> makeoperation r v m o
 
 let makeanoperation (r:vastmodule) (v:vvarinfo) (m:vblock) (o:voperation) = match getclass o with
-	| DSP -> let cvar = defaultrange (getcontrolvariablei r m.bid (o.oschedule.set -1))
-	in let ovar = makelvalnorange (getoperationvariablename m.bid o) (vil_to_vast_type REG (gettype v o))
-	in addregvar r ovar false
-		(TERNARY (cvar,defaultrange (getdspresultvariable r o.oschedule.assigned),VARIABLE ovar))
-	| Lookup s -> let cvar = defaultrange (getcontrolvariablei r m.bid (o.oschedule.set -1))
-	in let ovar = makelvalnorange (getoperationvariablename m.bid o) (vil_to_vast_type REG (gettype v o))
-	in addregvar r ovar false
-		(TERNARY (cvar,defaultrange (getlookupresultvariable r s o.oschedule.assigned),VARIABLE ovar))
+	| DSP -> let cvar = defaultrange (getcontrolvariablei r m.bid o.oschedule.set)
+	in let latch = makelvalnorange (getoperationvariablename m.bid o ^ "_latch") (vil_to_vast_type REG (gettype v o))
+	in let ovar = makelvalnorange (getoperationvariablename m.bid o) (vil_to_vast_type WIRE (gettype v o))
+	in  addwirevar r ovar true
+			(TERNARY (cvar,defaultrange (getdspresultvariable r o.oschedule.assigned),VARIABLE latch));
+		addregvar r latch false (VARIABLE ovar)
+	| Lookup s -> let cvar = defaultrange (getcontrolvariablei r m.bid o.oschedule.set)
+	in let latch = makelvalnorange (getoperationvariablename m.bid o ^ "_latch") (vil_to_vast_type REG (gettype v o))
+	in let ovar = makelvalnorange (getoperationvariablename m.bid o) (vil_to_vast_type WIRE (gettype v o))
+	in  addwirevar r ovar true
+			(TERNARY (cvar,defaultrange (getlookupresultvariable r s o.oschedule.assigned),VARIABLE latch));
+		addregvar r latch false (VARIABLE ovar)
 	| Notcounted -> makeoperation r v m o
 
 let rec makeoperations (makeop:vastmodule -> vvarinfo -> vblock -> voperation -> unit) 
