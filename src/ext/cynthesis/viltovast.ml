@@ -280,6 +280,7 @@ let makeoperation (r:vastmodule) (v:vvarinfo) (m:vblock) (o:voperation) = match 
 		(refertooperation r m.bid o1) (refertooperation r m.bid o2))
 	| Ternary(o1,o2,o3,t) -> makeoperationregvariable r v m o (TERNARY (
 		refertooperation r m.bid o1, refertooperation r m.bid o2, refertooperation r m.bid o3))
+	| Lookup(_,_,_) -> E.s (E.error "Wrong implementation of lookup\n")
 
 let makeoperationwire (r:vastmodule) (v:vvarinfo) (m:vblock) (o:voperation) = match o.operation with
 	| Unary (u,o1,t) -> makeoperationwirevariable r v m o (vil_to_vast_unop u 
@@ -291,6 +292,7 @@ let makeoperationwire (r:vastmodule) (v:vvarinfo) (m:vblock) (o:voperation) = ma
 	| ReturnValue _ 
 	| Result(_,_,_,_) 
 	| Variable _ 
+	| Lookup (_,_,_)
 	| Constant _-> makeoperation r v m o
 
 let makeanoperation (r:vastmodule) (v:vvarinfo) (m:vblock) (o:voperation) = match getclass o with
