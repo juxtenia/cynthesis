@@ -95,6 +95,22 @@ let alap (latest:int) (ops:voperation list) (o:voperation) = o.oschedule <- setl
 				| h::t -> (List.fold_left min ((alapref h) - (operationoffset h)) (List.map (fun o1 -> o1.oschedule.latest - (operationoffset o1)) t)) 
 		)
 
+(* gets classes of things to iterate through *)
+let rec childclassesrevorder (res:voperation list list) (acc:voperation list) (ops:voperation list) =
+	match ops with
+	| [] -> res
+	| _ -> let (ready,notready) = List.partition (fun o -> childreninlist true o acc) ops
+		in childclassesrevorder (ready::res) (List.rev_append ready acc) notready
+
+let fastasap (acc:voperation list) (ops:voperation list) = 
+	let classes = List.rev (childclassesrevorder [] acc ops)
+	in List.iter (List.iter asap) classes
+
+
+let fastalap (latest:int) (acc:voperation list) (ops:voperation list) = 
+	let classes = childclassesrevorder [] acc ops
+	in List.iter (List.iter (alap latest acc)) classes
+
 (* builds asap schedule for ops (start with acc=[]) *)
 let rec generateasap (acc:voperation list) (ops:voperation list) = 
 	match ops with
@@ -122,18 +138,18 @@ let rec scheduleiterator ll i acc currentstep todo =
 					if o.oschedule.earliest<=i 
 					then (o.oschedule <- setearliest o.oschedule (i+1); true )
 					else false) todo;
-				in  generateasap (rs@acc) nt; 
-					generatealap (List.fold_left (fun a b -> max a b.oschedule.earliest) (* find max time *)
-						0 todo) [] todo;
+				in  fastasap (rs@acc) nt; 
+					fastalap (List.fold_left (fun a b -> max a b.oschedule.earliest) (* find max time *)
+						0 todo) acc todo;
 					scheduleiterator ll (i+1) acc [] todo
 			| (s,ns) -> let nowscheduled = (List.map (fun (o,u) -> 
 					o.oschedule <- scheduleat o.oschedule i u; o) s)
 				in let nextstep = nowscheduled@currentstep
 				in let nextacc = nowscheduled@acc
 				in let nexttodo = ns@ntodo
-				in  generateasap nextacc nexttodo; 
-					generatealap (List.fold_left (fun a b -> max a b.oschedule.earliest) (* find max time *)
-						0 nexttodo) [] nexttodo;
+				in  fastasap nextacc nexttodo; 
+					fastalap (List.fold_left (fun a b -> max a b.oschedule.earliest) (* find max time *)
+						0 nexttodo) nextacc nexttodo;
 					scheduleiterator ll i nextacc nextstep nexttodo
 
 
