@@ -175,16 +175,16 @@ void printstate(char *str, struct state s){
 	    s.s_2_0, s.s_2_1, s.s_2_2, s.s_2_3, s.s_3_0, s.s_3_1, s.s_3_2, s.s_3_3 );
 }
 
-struct state AES128_encrypt(struct state input, struct state key);
+struct state AES128_encrypt(struct state in, struct state key);
 
 // Cipher is the main function that encrypts the PlainText.
-inline struct state AES128_encrypt(struct state input, struct state key)
+inline struct state AES128_encrypt(struct state in, struct state key)
 {
   uint8_t round = 0;
 
   // Add the First round key to the state before starting the rounds.
-  struct state t1 = statestatexor(input, key);
-  input = t1;
+  struct state t1 = statestatexor(in, key);
+  in = t1;
   
   // There will be Nr rounds.
   // The first Nr-1 rounds are identical.
@@ -192,7 +192,7 @@ inline struct state AES128_encrypt(struct state input, struct state key)
   for(round = 1; round < Nr; round++)
   {
   	//Subbytes
-    struct state t2 = subbytes(input);
+    struct state t2 = subbytes(in);
     //Shift rows
     struct state t3 = shiftrows(t2);
     //Mix columns
@@ -210,12 +210,12 @@ inline struct state AES128_encrypt(struct state input, struct state key)
     key.s_2_0 ^= key.s_1_0; key.s_2_1 ^= key.s_1_1; key.s_2_2 ^= key.s_1_2; key.s_2_3 ^= key.s_1_3;
     key.s_3_0 ^= key.s_2_0; key.s_3_1 ^= key.s_2_1; key.s_3_2 ^= key.s_2_2; key.s_3_3 ^= key.s_2_3;
     struct state t7 = statestatexor(t6, key);
-    input = t7;
+    in = t7;
   }
   
   // The last round is given below.
   // The MixColumns function is not here in the last round.
-  struct state t8 = subbytes(input);
+  struct state t8 = subbytes(in);
   struct state t9 = shiftrows(t8);
   struct row s1 = rotWord(key.s_3_0, key.s_3_1, key.s_3_2, key.s_3_3);
   struct row scramble = subword(s1);
