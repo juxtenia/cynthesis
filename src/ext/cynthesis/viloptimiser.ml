@@ -161,7 +161,7 @@ let isused (s:string) (f:funmodule) =
 	) b.bdataFlowGraph) f.vblocks
 
 let getused (f:funmodule) (gl:vlookupinfo list) = 
-	List.filter (fun g -> isused g.vdesc.varname f) gl
+	List.filter (fun g -> isused g.lookupname f) gl
 
 (** optimising entry point *)
 let optimisefunmodule (f:funmodule) = 
