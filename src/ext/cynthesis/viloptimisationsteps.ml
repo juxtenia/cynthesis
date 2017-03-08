@@ -142,7 +142,7 @@ try [Listutil.findfilter
 			apply = (fun (f:funmodule) -> 
 				List.iter (fun g -> 
 					if g.lookupname = !name 
-					then g.parrallelcount <- g.parrallelcount + 1
+					then g.parrallelcount <- g.parrallelcount * 2
 					else ()
 				) f.vglobals;
 				f
@@ -183,7 +183,7 @@ let orderoptimisations  (f:funmodule) (os:optimisation list) =
 let applyoptimisation (f:funmodule) (o) = o.apply f
 
 let opcostweight = 10.
-let timecostweight = 200.
+let timecostweight = 2000.
 let lookupcostweight = 0.01
 
 (** Evaluates how good a module is *)
