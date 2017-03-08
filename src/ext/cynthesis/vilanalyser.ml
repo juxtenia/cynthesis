@@ -24,10 +24,33 @@ let tristateadd t1 t2 = match (t1,t2) with
 	| (_,Notconst) -> Notconst
 	| (Const c1, Const c2) -> Const (add_big_int c1 c2)
 
+let rec removecasts (ol:voperationlink) =
+	match ol with
+		| Simple o1 -> Simple (removecastsoperation o1)
+		| Compound cll -> Compound (List.map (fun cl -> {
+			loperation = removecastsoperation cl.loperation;
+			lbase=cl.lbase;
+			lwidth=cl.lwidth;
+		}) cll)
+and removecastsoperation (o1:voperation) =
+	match o1.operation with
+		| Unary(Cast,Simple o,_) -> removecastsoperation o
+		| Variable _ 
+		| Constant _ -> o1
+		| x -> let op = match x with
+			| Result (v,b,w,ol) -> Result (v,b,w,removecasts ol)
+			| ReturnValue ol-> ReturnValue (removecasts ol)
+			| Unary (u,ol,t) -> Unary (u,removecasts ol,t)
+			| Binary (b,o1,o2,t) -> Binary (b,removecasts o1,o2,t) 
+			| Ternary (ol1,ol2,ol3,t) -> Ternary (removecasts ol1,removecasts ol2,removecasts ol3,t)
+			| Lookup (s,oll,t) -> Lookup (s,List.map removecasts oll,t)
+			| _ -> E.s (E.error "Unaccounted operation type")
+		in {oid=o1.oid;ousecount=0;oschedule=emptyschedule;operation=op;}
+
 let additiontristate (v:vvarinfo) (b:vblock) = 
 	if hasvariableresult v b.bdataFlowGraph 
 	then match Listutil.mapfilter (fun op -> match op.operation with
-			| Result (v1,b,w,o) when v1.varname = v.varname -> Some o
+			| Result (v1,b,w,o) when v1.varname = v.varname -> Some (removecasts o)
 			| _ -> None
 		) b.bdataFlowGraph with
 	| [Simple {operation=Binary(PlusA,Simple{operation=Variable v1},Simple{operation=Constant c},_)}] 
@@ -136,14 +159,17 @@ let rec unwindcasts (op:voperation) = match op.operation with
 	| Unary(Cast,Simple o1,_) -> unwindcasts o1
 	| _ -> op
 
-let basicloop (f:funmodule) (b:vblock) (loopdesc:(bool option) list) = match loopdesc with
+let basicloop (f:funmodule) (b:vblock) (loopdesc:(bool option) list) = 
+	match loopdesc with
 	| []
 	| [None] 
 	| _::_::_ -> None
-	| [Some b1] -> let (cto,switch,_) = List.find (fun (_,_,b2) -> b2 = b1) (Listutil.mapfilter (fun c ->
+	| [Some b1] -> 
+		let toreqbtriples = Listutil.mapfilter (fun c ->
 			match (c.connectto,c.requires) with
 			| (Some i,Some(o,b3)) -> Some(i,o,b3)
-			| _ -> None) b.boutputs)
+			| _ -> None) b.boutputs
+		in let (cto,switch,_) = List.find (fun (_,_,b2) -> b2 = b1) toreqbtriples
 		in match switch with
 			| Simple {operation=Binary(bopin,Simple o1,Simple o2,_)} 
 				when canterminatebasicloop bopin
