@@ -157,7 +157,10 @@ let makecontrolvariablesequence (i:int) (r:vastmodule) (m:vblock) =
 	in let lastreg = driver 1 controlstartvariable
 	in 	addvar r controlstartvariable;
 		addwirevar r controlstartalias true (VARIABLE controlstartvariable);
-		addwirevar r controlendvariable directconnect (VARIABLE lastreg);
+		if directconnect 
+			then addwirevar r controlendvariable directconnect (VARIABLE lastreg)
+			else addregvar r controlendvariable directconnect (VARIABLE lastreg)
+		;
 		addregvar r controlfollowvariable false (VARIABLE controlendvariable)
 
 let makedspblock (r:vastmodule) (mid:int) =
