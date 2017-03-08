@@ -362,20 +362,9 @@ let eq_complink (l1:vcomplink) (l2:vcomplink) =
 	l1.lbase = l2.lbase && l2.lwidth = l2.lwidth
 let eq_operation_link (l1:voperationlink) (l2:voperationlink) = match (l1,l2) with
 	| (Simple o1, Simple o2) -> o1.oid = o2.oid
-	| (Compound ol1, Compound ol2) -> List.for_all2 eq_complink ol1 ol2
+	| (Compound ol1, Compound ol2) -> List.length ol1 = List.length ol2 && List.for_all2 eq_complink ol1 ol2
 	| _ -> false
-let eq_operation_type (ot1:voperationtype) (ot2:voperationtype) = 
-	match (ot1,ot2) with
-	| (Variable v1, Variable v2) when v1.varname = v2.varname -> true
-	| (Constant c1, Constant c2) when (eq_big_int c1.value c2.value && eq_type c1.ctype c2.ctype) -> true
-	| (Result (v1,b1,w1,o1), Result (v2,b2,w2,o2)) when v1.varname = v2.varname && eq_operation_link o1 o2 && b1=b2 && w1=w2-> true
-	| (Unary (u1,o1,t1), Unary (u2,o2,t2)) when eq_unop u1 u2 && eq_operation_link o1 o2 && eq_type t1 t2 -> true
-	| (Binary (b1,o11,o21,t1), Binary(b2,o12,o22,t2)) 
-		when eq_binop b1 b2 && eq_operation_link o11 o12 &&
-		eq_operation_link o21 o22 && eq_type t1 t2 -> true
-	| _ -> false
-let eq_operation (o1:voperation) (o2:voperation) = 
-	o1.oid = o2.oid && eq_operation_type o1.operation o2.operation
+
 
 (*  The following functions attempt to give a quick readable
  *  output from the various types, intented for console output
@@ -459,14 +448,26 @@ and print_vscheduleinfo si =
 	"@" ^ string_of_int si.set 
 	^ "(" ^ string_of_int si.earliest 
 	^ "-" ^ string_of_int si.latest ^ ")"
-and print_vtype t = match t with
-	| Basic te -> print_vtypeelement te
-	| Struct (te,cel) -> string_of_list_cl print_vcompelement cel
-	| Union (te,cel) -> "{" ^ (String.concat "||" (List.map print_vcompelement cel)) ^ "}"
+and print_vtype t = print_vtypeelement (gettypeelement t)
 and print_vtypeelement te = 
 	(string_of_int te.width) ^ "'" ^ if te.isSigned then "s" else "u"
 and print_vcompelement ce = 
 	ce.ename ^ ":" ^ print_vtype ce.etype
+
+let eq_operation_type (ot1:voperationtype) (ot2:voperationtype) = 
+	match (ot1,ot2) with
+	| (Variable v1, Variable v2) when v1.varname = v2.varname -> true
+	| (Constant c1, Constant c2) when (eq_big_int c1.value c2.value && eq_type c1.ctype c2.ctype) -> true
+	| (Result (v1,b1,w1,o1), Result (v2,b2,w2,o2)) when v1.varname = v2.varname && eq_operation_link o1 o2 && b1=b2 && w1=w2-> true
+	| (Unary (u1,o1,t1), Unary (u2,o2,t2)) when eq_unop u1 u2 && eq_operation_link o1 o2 && eq_type t1 t2 -> true
+	| (Binary (b1,o11,o21,t1), Binary(b2,o12,o22,t2)) 
+		when eq_binop b1 b2 && eq_operation_link o11 o12 &&
+		eq_operation_link o21 o22 && eq_type t1 t2 -> true
+	| (Lookup (s1, oll1, t1),Lookup (s2, oll2, t2)) when s1 = s2 && 
+		List.for_all2 eq_operation_link oll1 oll2 && eq_type t1 t2 -> true
+	| _ -> false
+let eq_operation (o1:voperation) (o2:voperation) = 
+	o1.oid = o2.oid && eq_operation_type o1.operation o2.operation
 
 let rec baseinittype (i:vinitinfo) = match i with
 	| Const c -> c.ctype
@@ -636,16 +637,28 @@ let replaceone (reps :(voperation*voperation) list) (op: voperation) =
 	try snd (List.find (fun (f,_) -> f.oid = op.oid) reps)
 	with | Not_found -> op
 
+(* remove up to the certain base *)
+let rec removetill (b:int) (cll:vcomplink list) = match (b,cll) with
+	| (0,_) 
+	| (_,[]) -> cll
+	| (_,h::t) -> if h.lwidth > b 
+		then {lbase=h.lbase+b; lwidth=h.lwidth-b; loperation=h.loperation}::t
+		else removetill (b-h.lwidth) t
+
+let shallow_copy_complink (cl:vcomplink) = 
+	{lbase=cl.lbase;lwidth=cl.lwidth;loperation=cl.loperation;}
+
+(* get the required width from the list *)
+let rec getwidth (w:int) (cll:vcomplink list) = match (w,cll) with
+	| (0,_) 
+	| (_,[]) -> []
+	| (_,h::t) -> if h.lwidth > w
+		then [{lbase=h.lbase;lwidth=w;loperation=h.loperation}]
+		else (shallow_copy_complink h)::(getwidth (w - h.lwidth) t)
+
 (* gets the specified range of a complink list *)
 let getrange (b:int) (w:int) (cll:vcomplink list) = 
-	Listutil.mapfilter (fun cl ->
-		if (b >= cl.lbase && b < cl.lbase + cl.lwidth) || (cl.lbase >= b && cl.lbase < b + w)
-		then Some {
-			loperation=cl.loperation;
-			lbase=max cl.lbase b;
-			lwidth=(min (b+w) (cl.lbase+cl.lwidth)) - b; }
-		else None
-	) cll
+	getwidth w (removetill b cll)
 
 (* creates a new complink and replaces the target if necessary *)
 let duplicatecomplinkwithreplacement (replacee:voperation) (replacer:voperation) (target:vcomplink) =
