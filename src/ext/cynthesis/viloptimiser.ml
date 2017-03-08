@@ -154,6 +154,15 @@ let rec peephole (inits:vlookupinfo list) (v:vvarinfo) (b:vblock) =
 				replaceconditions reps b.boutputs;
 				peephole inits v b
 
+let isused (s:string) (f:funmodule) =
+	List.exists (fun b -> List.exists (fun o -> match o.operation with
+		| Lookup(s1,_,_) when s1 = s -> true
+		| _ -> false
+	) b.bdataFlowGraph) f.vblocks
+
+let getused (f:funmodule) (gl:vlookupinfo list) = 
+	List.filter (fun g -> isused g.vdesc.varname f) gl
+
 (** optimising entry point *)
 let optimisefunmodule (f:funmodule) = 
 		(* inter block optimisations *)
@@ -192,3 +201,6 @@ let optimisefunmodule (f:funmodule) =
 		variablecull f;
 		(* run this again to catch the dead code the variable cull reveals *)
 		culloperations f;
+		(* remove unused globals *)
+		f.vglobals <- getused f f.vglobals;
+
