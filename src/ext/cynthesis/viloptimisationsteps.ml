@@ -137,7 +137,7 @@ try [Listutil.findfilter
 		) b.bdataFlowGraph
 		then Some {
 			blockid = b.bid;
-			desc = LoopFlatten;
+			desc = LookupExpand;
 			estimatedvalue = 1;
 			apply = (fun (f:funmodule) -> 
 				List.iter (fun g -> 
