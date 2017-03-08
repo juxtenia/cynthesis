@@ -268,7 +268,7 @@ let refertocomplink (r:vastmodule) (bid:int) (cl:vcomplink) =
 
 let refertooperation (r:vastmodule) (bid:int) (ol:voperationlink) = match ol with
 	| Simple o -> defaultrange (getoperationvariable r bid o)
-	| Compound cel-> CONCAT (List.map (refertocomplink r bid) cel)
+	| Compound cel-> CONCAT (List.rev (List.map (refertocomplink r bid) cel))
 
 let makeoperation (r:vastmodule) (v:vvarinfo) (m:vblock) (o:voperation) = match o.operation with
 	| ReturnValue o1 -> makereturnwirevariable r v m (refertooperation r m.bid o1)
