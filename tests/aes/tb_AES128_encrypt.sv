@@ -39,15 +39,15 @@ module tb_AES128_encrypt
 
 	// initialise clock and generate a reset pulse
 	initial begin
-                key = 128'h2b7e151628aed2a6abf7158809cf4f3c;
-		testinputs[0] = 128'h6bc1bee22e409f96e93d7e117393172a;            
-		testoutputs[0] = 128'h3ad77bb40d7a3660a89ecaf32466ef97;
-		testinputs[1] = 128'hae2d8a571e03ac9c9eb76fac45af8e51;
-		testoutputs[1] = 128'hf5d3d58503b9699de785895a96fdbaaf;
-		testinputs[2] = 128'h30c81c46a35ce411e5fbc1191a0a52ef;
-		testoutputs[2] = 128'h43b1cd7f598ece23881b00e3ed030688;
-		testinputs[3] = 128'hf69f2445df4f9b17ad2b417be66c3710;
-		testoutputs[3] = 128'h7b0c785e27e8ad3f8223207104725dd4;
+                key = 128'h3c4fcf098815f7aba6d2ae2816157e2b;
+		testinputs[0] = 128'h2a179373117e3de9969f402ee2bec16b;            
+		testoutputs[0] = 128'h97ef6624f3ca9ea860367a0db47bd73a;
+		testinputs[1] = 128'h518eaf45ac6fb79e9cac031e578a2dae;
+		testoutputs[1] = 128'hafbafd965a8985e79d69b90385d5d3f5;
+		testinputs[2] = 128'hef520a1a19c1fbe511e45ca3461cc830;
+		testoutputs[2] = 128'h880603ede3001b8823ce8e597fcdb143;
+		testinputs[3] = 128'h10376ce67b412bad179b4fdf45249ff6;
+		testoutputs[3] = 128'hd45d7204712023823fade8275e780c7b;
 
 		clk = 1;
 		rst = 1;

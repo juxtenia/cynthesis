@@ -39,15 +39,15 @@ module tb_mixcolumns
 
 	// initialise clock and generate a reset pulse
 	initial begin
-                key = 128'h2b7e151628aed2a6abf7158809cf4f3c;
-		testinputs[0] = 128'h6bc1bee22e409f96e93d7e117393172a;            
-		testoutputs[0] = 128'hd2c9f01d9582ea9ae1001b41755db045;
-		testinputs[1] = 128'hae2d8a571e03ac9c9eb76fac45af8e51;
-		testoutputs[1] = 128'hed2675e0096be1ae26f61822bfd81e4c;
-		testinputs[2] = 128'h30c81c46a35ce411e5fbc1191a0a52ef;
-		testoutputs[2] = 128'h79d90a084c3d1f641f49ac3c97179eb3;
-		testinputs[3] = 128'hf69f2445df4f9b17ad2b417be66c3710;
-		testoutputs[3] = 128'h2cfaee30f8e08480064389704477d44a;
+                key = 128'h3c4fcf098815f7aba6d2ae2816157e2b;
+		testinputs[0] = 128'h2a179373117e3de9969f402ee2bec16b;            
+		testoutputs[0] = 128'h45b05d75411b00e19aea82951df0c9d2;
+		testinputs[1] = 128'h518eaf45ac6fb79e9cac031e578a2dae;
+		testoutputs[1] = 128'h4c1ed8bf2218f626aee16b09e07526ed;
+		testinputs[2] = 128'hef520a1a19c1fbe511e45ca3461cc830;
+		testoutputs[2] = 128'hb39e17973cac491f641f3d4c080ad979;
+		testinputs[3] = 128'h10376ce67b412bad179b4fdf45249ff6;
+		testoutputs[3] = 128'h4ad47744708943068084e0f830eefa2c;
 
 		clk = 1;
 		rst = 1;
