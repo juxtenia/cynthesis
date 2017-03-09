@@ -479,9 +479,7 @@ let returnconnections (r:vastmodule) (f:funmodule) =
 		(fun m -> Listutil.mapfilter (fun c -> match c with
 		| {connectfrom=Some i;connectto=None;requires=r} -> Some (i,r)
 		| _ -> None) m.boutputs) f.vblocks)
-	in  addclocked r (getvar r finishoutput) (BINARY(LAND,
-		UNARY(ULNOT, BINARY (LAND, defaultrange (getvar r startinput), 
-			UNARY (ULNOT, defaultrange (getvar r startfollow)))),
+	in  addclocked r (getvar r finishoutput) 
 		(List.fold_left (fun a (i,re) -> BINARY (LOR,a,
 			match re with
 				| None -> defaultrange (getcontrolendvariable r i)
@@ -493,7 +491,10 @@ let returnconnections (r:vastmodule) (f:funmodule) =
 					defaultrange (getreturnvariable r i),
 					UNARY(ULNOT,refertooperation r i o)
 				))) 
-			(defaultrange (getvar r finishoutput)) returnpoints)));
+			(BINARY(LAND,
+				UNARY(ULNOT, BINARY (LAND, defaultrange (getvar r startinput), 
+					UNARY (ULNOT, defaultrange (getvar r startfollow)))),
+				(defaultrange (getvar r finishoutput)))) returnpoints);
 		addclocked r (getvar r f.vdesc.varname) 
 		(List.fold_left (fun a (i,_) -> 
 			TERNARY (
