@@ -4,7 +4,7 @@
 vlib work
 # compile our SystemVerilog files
 vlog shiftrowsstep.sv
-vlog tb_shiftrowsstep.sv
+vlog tb_shiftrowsstep2.sv
 # point the simulator at the compiled design
 vsim work.tb_shiftrowsstep
 # run simulation for 200 million cycles

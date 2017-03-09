@@ -15,6 +15,7 @@ module tb_AES128_encrypt
     );
 
     logic started;
+    logic startfollow;
     logic finished;
     logic finishfollow;
 
@@ -67,8 +68,9 @@ module tb_AES128_encrypt
 	always #5 clk = !clk;
 	// output checking
 	always @ (posedge clk) begin 
-	    finishfollow <= finished;
-	    if(finished && !finishfollow) begin
+            finishfollow <= finished && started && startfollow;
+            startfollow <= started;
+            if(finished && started && startfollow && !finishfollow) begin
                 #10
 	        $display("%010t ---------- input was %h result should be %h, is %h ----------", $time, in, testoutputs[testno], count);
 		    if (count != testoutputs[testno]) numerr = numerr + 1;
@@ -79,12 +81,13 @@ module tb_AES128_encrypt
 	end
 	//Start a testrun
 	always @ (posedge nexttest) begin
-		#20
-		nexttest = 0;
-		in = testinputs[testno];
-		started = 1;
-		#20 started = 0;
-	end
+                #20
+                started = 0;
+                nexttest = 0;
+                #20
+                in = testinputs[testno];
+                started = 1;
+        end
 	//Errors
 	always @ (numerr) $display(" - ERROR");
 	//Termination
