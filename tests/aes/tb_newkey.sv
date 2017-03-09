@@ -41,13 +41,13 @@ module tb_newkey
 	initial begin
                 key = 128'h3c4fcf098815f7aba6d2ae2816157e2b;
 		testinputs[0] = 128'h2a179373117e3de9969f402ee2bec16b;            
-		testoutputs[0] = 128'h45b05d75411b00e19aea82951df0c9d2;
+		testoutputs[0] = 128'h2f61ff5928479eca27b314a6f5403bcb;
 		testinputs[1] = 128'h518eaf45ac6fb79e9cac031e578a2dae;
-		testoutputs[1] = 128'h4c1ed8bf2218f626aee16b09e07526ed;
+		testoutputs[1] = 128'h54f8c36f955614bd2d8057964074d70e;
 		testinputs[2] = 128'hef520a1a19c1fbe511e45ca3461cc830;
-		testoutputs[2] = 128'hb39e17973cac491f641f3d4c080ad979;
+		testoutputs[2] = 128'hea24663020f858c6a0c8082b51e23290;
 		testinputs[3] = 128'h10376ce67b412bad179b4fdf45249ff6;
-		testoutputs[3] = 128'h4ad47744708943068084e0f830eefa2c;
+		testoutputs[3] = 128'h154100cc4278888ea6b71b5752da6556;
 
 		clk = 1;
 		rst = 1;
