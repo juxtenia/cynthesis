@@ -401,3 +401,9 @@
 /tests/*/*.vstf
 /tests/bitcount/bitcount.sv
 /tests/bitsum/bitsum.sv
+/tests/aes/AES128_ecnrypt.sv
+/tests/aes/addkey.sv
+/tests/aes/subbytesstep.sv
+/tests/aes/shiftrowsstep.sv
+/tests/aes/mixcolumns.sv
+/tests/aes/newkey.sv
