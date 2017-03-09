@@ -148,7 +148,7 @@ let makecontrolvariablesequence (i:int) (r:vastmodule) (m:vblock) =
 		(onewidetype (if directconnect then WIRE else REG))
 	in let controlfollowvariable = makelvalnorange (getcontrolvariablename m.bid followcontrol)
 		(onewidetype REG)
-	in let rec driver j p = if j >= i then p else(
+	in let rec driver j p = if j > i then p else(
 		let controlnextvariable = makelvalnorange (getcontrolvariablename m.bid (string_of_int j)) 
 			(onewidetype REG)
 		in addregvar r controlnextvariable false (VARIABLE p);
