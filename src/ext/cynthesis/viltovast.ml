@@ -492,9 +492,10 @@ let returnconnections (r:vastmodule) (f:funmodule) =
 					UNARY(ULNOT,refertooperation r i o)
 				))) 
 			(BINARY(LAND,
+				(defaultrange (getvar r finishoutput)),
 				UNARY(ULNOT, BINARY (LAND, defaultrange (getvar r startinput), 
-					UNARY (ULNOT, defaultrange (getvar r startfollow)))),
-				(defaultrange (getvar r finishoutput)))) returnpoints);
+					UNARY (ULNOT, defaultrange (getvar r startfollow))))
+				)) returnpoints);
 		addclocked r (getvar r f.vdesc.varname) 
 		(List.fold_left (fun a (i,_) -> 
 			TERNARY (
