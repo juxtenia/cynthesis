@@ -175,58 +175,13 @@ void printstate(char *str, struct state s){
 	    s.s_2_0, s.s_2_1, s.s_2_2, s.s_2_3, s.s_3_0, s.s_3_1, s.s_3_2, s.s_3_3 );
 }
 
-struct state AES128_encrypt(struct state in, struct state key);
+struct state shiftrowsstep(struct state in, struct state key);
 
 // Cipher is the main function that encrypts the PlainText.
-inline struct state AES128_encrypt(struct state in, struct state key)
+inline struct state shiftrowsstep(struct state in, struct state key)
 {
-  uint8_t round = 0;
-
-  // Add the First round key to the state before starting the rounds.
-  struct state t1 = statestatexor(in, key);
-  in = t1;
-  
-  // There will be Nr rounds.
-  // The first Nr-1 rounds are identical.
-  // These Nr-1 rounds are executed in the loop below.
-  for(round = 1; round < Nr; round++)
-  {
-  	//Subbytes
-    struct state t2 = subbytes(in);
-    //Shift rows
-    struct state t3 = shiftrows(t2);
-    //Mix columns
-    struct state t4 = pairwisexor(t3);
-    struct state t5 = mapxtime(t4);
-    struct row xors = rowxor(t3);
-    struct state xormask = staterowxor(t5,xors);
-    struct state t6 = statestatexor(t3,xormask);
-    //Generate new key
-    struct row s1 = rotWord(key.s_3_0, key.s_3_1, key.s_3_2, key.s_3_3);
-    struct row scramble = subword(s1);
-    scramble.r_0 ^= Rcon[round];
-    key.s_0_0 ^= scramble.r_0; key.s_0_1 ^= scramble.r_1; key.s_0_2 ^= scramble.r_2; key.s_0_3 ^= scramble.r_3;
-    key.s_1_0 ^= key.s_0_0; key.s_1_1 ^= key.s_0_1; key.s_1_2 ^= key.s_0_2; key.s_1_3 ^= key.s_0_3;
-    key.s_2_0 ^= key.s_1_0; key.s_2_1 ^= key.s_1_1; key.s_2_2 ^= key.s_1_2; key.s_2_3 ^= key.s_1_3;
-    key.s_3_0 ^= key.s_2_0; key.s_3_1 ^= key.s_2_1; key.s_3_2 ^= key.s_2_2; key.s_3_3 ^= key.s_2_3;
-    //Add round key
-    struct state t7 = statestatexor(t6, key);
-    in = t7;
-  }
-  
-  // The last round is given below.
-  // The MixColumns function is not here in the last round.
-  struct state t8 = subbytes(in);
-  struct state t9 = shiftrows(t8);
-  struct row s1 = rotWord(key.s_3_0, key.s_3_1, key.s_3_2, key.s_3_3);
-  struct row scramble = subword(s1);
-  scramble.r_0 ^= Rcon[round];
-  key.s_0_0 ^= scramble.r_0; key.s_0_1 ^= scramble.r_1; key.s_0_2 ^= scramble.r_2; key.s_0_3 ^= scramble.r_3;
-  key.s_1_0 ^= key.s_0_0; key.s_1_1 ^= key.s_0_1; key.s_1_2 ^= key.s_0_2; key.s_1_3 ^= key.s_0_3;
-  key.s_2_0 ^= key.s_1_0; key.s_2_1 ^= key.s_1_1; key.s_2_2 ^= key.s_1_2; key.s_2_3 ^= key.s_1_3;
-  key.s_3_0 ^= key.s_2_0; key.s_3_1 ^= key.s_2_1; key.s_3_2 ^= key.s_2_2; key.s_3_3 ^= key.s_2_3;
-  struct state t10 = statestatexor(t9, key);
-  return t10;
+  struct state t3 = shiftrows(in);
+  return t3;
 }
 
 static void test_encrypt_ecb_verbose(void)
@@ -243,7 +198,7 @@ static void test_encrypt_ecb_verbose(void)
                                   { (uint8_t) 0xf6, (uint8_t) 0x9f, (uint8_t) 0x24, (uint8_t) 0x45, (uint8_t) 0xdf, (uint8_t) 0x4f, (uint8_t) 0x9b, (uint8_t) 0x17, (uint8_t) 0xad, (uint8_t) 0x2b, (uint8_t) 0x41, (uint8_t) 0x7b, (uint8_t) 0xe6, (uint8_t) 0x6c, (uint8_t) 0x37, (uint8_t) 0x10}};
 
     // print text to encrypt, key and IV
-    printf("ECB encrypt verbose:\n\n");
+    printf("shiftrows verbose:\n\n");
     printf("plain text:\n");
     for(i = (uint8_t) 0; i < (uint8_t) 4; ++i)
     {
@@ -258,7 +213,7 @@ static void test_encrypt_ecb_verbose(void)
     printf("ciphertext:\n");
     for(i = 0; i < 4; ++i)
     {
-        printstate("", AES128_encrypt(plain_text[i], key));
+        printstate("", shiftrowsstep(plain_text[i], key));
     }
     printf("\n");
 }
@@ -267,11 +222,11 @@ void test_encrypt_ecb(void)
 {
   struct state key = {0x2b, 0x7e, 0x15, 0x16, 0x28, 0xae, 0xd2, 0xa6, 0xab, 0xf7, 0x15, 0x88, 0x09, 0xcf, 0x4f, 0x3c};
   struct state in  = {0x6b, 0xc1, 0xbe, 0xe2, 0x2e, 0x40, 0x9f, 0x96, 0xe9, 0x3d, 0x7e, 0x11, 0x73, 0x93, 0x17, 0x2a};
-  struct state out = {0x3a, 0xd7, 0x7b, 0xb4, 0x0d, 0x7a, 0x36, 0x60, 0xa8, 0x9e, 0xca, 0xf3, 0x24, 0x66, 0xef, 0x97};
+  struct state out = {0x6b, 0x40, 0x7e, 0x2a, 0x2e, 0x3d, 0x17, 0xe2, 0xe9, 0x93, 0xbe, 0x96, 0x73, 0xc1, 0x9f, 0x11};
 
-  struct state result = AES128_encrypt(in, key);
+  struct state result = shiftrowsstep(in, key);
 
-  printf("ECB encrypt: ");
+  printf("shiftrows: ");
 
   if(0 == memcmp((char*) &out, (char*) &result, 16))
   {
