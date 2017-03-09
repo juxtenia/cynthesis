@@ -175,10 +175,10 @@ void printstate(char *str, struct state s){
 	    s.s_2_0, s.s_2_1, s.s_2_2, s.s_2_3, s.s_3_0, s.s_3_1, s.s_3_2, s.s_3_3 );
 }
 
-struct state mixcoloumns(struct state in, struct state key);
+struct state mixcolumns(struct state in, struct state key);
 
 // Cipher is the main function that encrypts the PlainText.
-inline struct state mixcoloumns(struct state in, struct state key)
+inline struct state mixcolumns(struct state in, struct state key)
 {
   //Mix columns
   struct state t4 = pairwisexor(in);
@@ -218,7 +218,7 @@ static void test_encrypt_ecb_verbose(void)
     printf("ciphertext:\n");
     for(i = 0; i < 4; ++i)
     {
-        printstate("", mixcoloumns(plain_text[i], key));
+        printstate("", mixcolumns(plain_text[i], key));
     }
     printf("\n");
 }
@@ -229,7 +229,7 @@ void test_encrypt_ecb(void)
   struct state in  = {0x6b, 0xc1, 0xbe, 0xe2, 0x2e, 0x40, 0x9f, 0x96, 0xe9, 0x3d, 0x7e, 0x11, 0x73, 0x93, 0x17, 0x2a};
   struct state out = {0xd2, 0xc9, 0xf0, 0x1d, 0x95, 0x82, 0xea, 0x9a, 0xe1, 0x00, 0x1b, 0x41, 0x75, 0x5d, 0xb0, 0x45};
 
-  struct state result = mixcoloumns(in, key);
+  struct state result = mixcolumns(in, key);
 
   printf("mixcoloumns: ");
 
