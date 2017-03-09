@@ -130,7 +130,7 @@ let rec scheduleiterator ll i acc currentstep todo =
 	match todo with
 	| [] -> ()
 	| x -> match List.partition (fun o -> 
-		childreninlist true o acc && o.oschedule.earliest <= i) todo 
+		o.oschedule.earliest <= i && childreninlist true o acc ) todo 
 	with
 		| ([],_) -> scheduleiterator ll (i+1) acc [] todo
 		| (ts,ntodo) -> match getschedulable ll currentstep ts with
