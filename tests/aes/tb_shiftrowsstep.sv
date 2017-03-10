@@ -39,15 +39,15 @@ module tb_shiftrowsstep
 
 	// initialise clock and generate a reset pulse
 	initial begin
-                key = 128'h2b7e151628aed2a6abf7158809cf4f3c;
-		testinputs[0] = 128'h6bc1bee22e409f96e93d7e117393172a;
-		testoutputs[0] = 128'h6b407e2a2e3d17e2e993be9673c19f11;
-		testinputs[1] = 128'hae2d8a571e03ac9c9eb76fac45af8e51;
-		testoutputs[1] = 128'hae036f511eb78e579eaf8a9c452dacac;
-		testinputs[2] = 128'h30c81c46a35ce411e5fbc1191a0a52ef;
-		testoutputs[2] = 128'h305cc1efa3fb5246e50a1c111ac8e419;
-		testinputs[3] = 128'hf69f2445df4f9b17ad2b417be66c3710;
-		testoutputs[3] = 128'hf64f4110df2b3745ad6c2417e69f9b7b;
+                key = 128'h3c4fcf098815f7aba6d2ae2816157e2b;
+		testinputs[0] = 128'h2a179373117e3de9969f402ee2bec16b;
+		testoutputs[0] = 128'h119fc17396be93e9e2173d2e2a7e406b;
+		testinputs[1] = 128'h518eaf45ac6fb79e9cac031e578a2dae;
+		testoutputs[1] = 128'hacac2d459c8aaf9e578eb71e516f03ae;
+		testinputs[2] = 128'hef520a1a19c1fbe511e45ca3461cc830;
+		testoutputs[2] = 128'h19e4c81a111c0ae54652fba3efc15c30;
+		testinputs[3] = 128'h10376ce67b412bad179b4fdf45249ff6;
+		testoutputs[3] = 128'h7b9b9fe617246cad45372bdf10414ff6;
 
 		clk = 1;
 		rst = 1;
