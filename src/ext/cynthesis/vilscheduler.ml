@@ -97,8 +97,15 @@ let asap (o:voperation) = o.oschedule <- setearliest o.oschedule
 let alap (latest:int) (ops:voperation list) (o:voperation) = o.oschedule <- setlatest o.oschedule (let users = List.filter (fun o1 -> List.memq o (getchildren o1)) ops 
 			in match users with
 				| [] -> latest
-				| h::t -> (List.fold_left min ((alapref h) - (operationoffset h)) (List.map (fun o1 -> o1.oschedule.latest - (operationoffset o1)) t)) 
+				| h::t -> (List.fold_left min ((alapref h) - (operationoffset h)) (List.map (fun o1 -> (alapref o1) - (operationoffset o1)) t)) 
 		)
+
+let reverse_alap (o:voperation) = let alap_v = (alapref o) - (operationoffset o)
+	in List.iter (fun o1 ->
+		if o1.oschedule.set < 0 && o1.oschedule.latest > alap_v
+		then o1.oschedule <- setlatest o1.oschedule alap_v
+		else ()
+	) (getchildren o)
 
 (* gets classes of things to iterate through *)
 let rec childclassesrevorder (res:voperation list list) (acc:voperation list) (ops:voperation list) =
@@ -107,46 +114,51 @@ let rec childclassesrevorder (res:voperation list list) (acc:voperation list) (o
 	| _ -> let (ready,notready) = List.partition (fun o -> childreninlist true o acc) ops
 		in childclassesrevorder (ready::res) (List.rev_append ready acc) notready
 
-let rec childclassesrevorderset (acc:voperation list) (ops:voperation list) = 
-	let startset = S.of_list (List.map (fun o -> o.oid) acc)
-	in let rec driver (res:voperation list list) (acc:S.t) (ops:voperation list) =
-		match ops with
-		| [] -> res
-		| _ -> let (ready,notready) = List.partition (fun o -> 
-				List.for_all (fun c -> S.mem c.oid acc) (getchildren o)) ops
-			in let nextset = (S.union (S.of_list (List.map (fun o -> o.oid) ready)) acc)
-			in driver (ready::res) nextset notready
-	in driver [] startset ops
+let rec childclassesrevorderset (res:voperation list list) (acc:S.t) (ops:voperation list) =
+	match ops with
+	| [] -> List.rev res
+	| _ -> let (ready,notready) = List.partition (fun o -> 
+			List.for_all (fun c -> S.mem c.oid acc) (getchildren o)) ops
+		in let nextset = (S.union (S.of_list (List.map (fun o -> o.oid) ready)) acc)
+		in childclassesrevorderset (ready::res) nextset notready
+	
 
-let fastasap (acc:voperation list) (ops:voperation list) = 
-	let classes = List.rev (childclassesrevorderset acc ops)
+let fastasap (acc:S.t) (ops:voperation list) = 
+	let classes = childclassesrevorderset [] acc ops
 	in List.iter (List.iter asap) classes
 
 
-let fastalap (latest:int) (acc:voperation list) (ops:voperation list) = 
-	let classes = childclassesrevorderset acc ops
-	in List.iter (List.iter (alap latest acc)) classes
+let fastalap (latest:int) (acc:S.t) (ops:voperation list) = 
+	let classes = childclassesrevorderset [] acc ops
+	in  List.iter (fun o -> o.oschedule <- setlatest o.oschedule latest) ops;
+		List.iter (List.iter reverse_alap) classes
+
+let fastasapalap (acc:S.t) (ops:voperation list) = 
+	let classes = childclassesrevorderset [] acc ops
+	in let rec asapdriver cl = match cl with
+		| [] -> 0
+		| [c] -> List.iter asap c;
+			(List.fold_left (fun a b -> max a b.oschedule.earliest) 0 c)
+		| h::t -> List.iter asap h;
+			asapdriver t
+	in let latest = asapdriver classes
+	in  List.iter (fun o -> o.oschedule <- setlatest o.oschedule latest) ops;
+		List.iter (List.iter reverse_alap) classes
 
 (* builds asap schedule for ops (start with acc=[]) *)
 let rec generateasap (acc:voperation list) (ops:voperation list) = 
-	match ops with
-	| [] -> ()
-	| _ -> let (ready,notready) = List.partition (fun o -> childreninlist true o acc) ops
-		in List.iter asap ready;
-			generateasap (List.rev_append ready acc) notready
+	fastasap (S.of_list (List.map (fun o -> o.oid) acc)) ops
 (* builds alap schedule for ops (start with acc=[] and latest as the maximum asap value) *)
 let rec generatealap (latest:int) (acc:voperation list) (ops:voperation list) = 
-	match ops with
-	| [] -> ()
-	| _ -> let (notready,ready) = List.partition (fun o -> List.exists (fun o1 -> List.memq o (getchildren o1)) ops) ops
-		in List.iter (alap latest acc) ready;
-			generatealap latest (List.rev_append ready acc) notready
+	fastalap latest (S.of_list (List.map (fun o -> o.oid) acc)) ops
 
 let rec scheduleiterator ll i acc currentstep todo =  
 	match todo with
 	| [] -> ()
 	| x -> match List.partition (fun o -> 
-		o.oschedule.earliest <= i && childreninlist true o acc ) todo 
+			o.oschedule.earliest <= i &&
+			List.for_all (fun c -> S.mem c.oid acc) (getchildren o)
+		) todo
 	with
 		| ([],_) -> scheduleiterator ll (i+1) acc [] todo
 		| (ts,ntodo) -> match getschedulable ll currentstep ts with
@@ -154,31 +166,15 @@ let rec scheduleiterator ll i acc currentstep todo =
 					if o.oschedule.earliest<=i 
 					then (o.oschedule <- setearliest o.oschedule (i+1); true )
 					else false) todo;
-				in  fastasap (rs@acc) nt; 
-					fastalap (List.fold_left (fun a b -> max a b.oschedule.earliest) (* find max time *)
-						0 todo) acc todo;
+				in  fastasapalap (S.union (S.of_list (List.map (fun o -> o.oid) rs)) acc) nt; 
 					scheduleiterator ll (i+1) acc [] todo
 			| (s,ns) -> let nowscheduled = (List.map (fun (o,u) -> 
 					o.oschedule <- scheduleat o.oschedule i u; o) s)
 				in let nextstep = nowscheduled@currentstep
-				in let nextacc = nowscheduled@acc
+				in let nextacc = (S.union (S.of_list (List.map (fun o -> o.oid) nowscheduled)) acc)
 				in let nexttodo = ns@ntodo
-				in  fastasap nextacc nexttodo; 
-					fastalap (List.fold_left (fun a b -> max a b.oschedule.earliest) (* find max time *)
-						0 nexttodo) nextacc nexttodo;
+				in  fastasapalap nextacc nexttodo; 
 					scheduleiterator ll i nextacc nextstep nexttodo
-
-
-(* generates an overall schedule for the module *)
-let rec generateschedule (m:vblock) =
-	List.iter (fun o -> o.oschedule <- (* TODO add non trivial scheduler *)
-		{
-			earliest = o.oschedule.earliest;
-			latest = o.oschedule.latest;
-			set = o.oschedule.earliest;
-			assigned = o.oschedule.assigned;
-		}
-	) m.bdataFlowGraph
 
 (* generates schedules for all blocks *)
 let generatescheduleinfo (f:funmodule) = 
@@ -189,5 +185,5 @@ let generatescheduleinfo (f:funmodule) =
 		generateasap [] m.bdataFlowGraph; 
 		generatealap (List.fold_left (fun a b -> max a b.oschedule.earliest) (* find max time *)
 			0 m.bdataFlowGraph) [] m.bdataFlowGraph;
-		scheduleiterator f.vglobals 0 [] [] m.bdataFlowGraph;
+		scheduleiterator f.vglobals 0 S.empty [] m.bdataFlowGraph;
 	) f.vblocks
