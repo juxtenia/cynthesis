@@ -117,11 +117,35 @@ const uint8_t Rcon[255] = {
   .s_3_2 = getSBoxValue(s.s_3_2), \
   .s_3_3 = getSBoxValue(s.s_3_3) }
 
+#define invsubbytes(s) { \
+  .s_0_0 = getSBoxInvert(s.s_0_0), \
+  .s_0_1 = getSBoxInvert(s.s_0_1), \
+  .s_0_2 = getSBoxInvert(s.s_0_2), \
+  .s_0_3 = getSBoxInvert(s.s_0_3), \
+  .s_1_0 = getSBoxInvert(s.s_1_0), \
+  .s_1_1 = getSBoxInvert(s.s_1_1), \
+  .s_1_2 = getSBoxInvert(s.s_1_2), \
+  .s_1_3 = getSBoxInvert(s.s_1_3), \
+  .s_2_0 = getSBoxInvert(s.s_2_0), \
+  .s_2_1 = getSBoxInvert(s.s_2_1), \
+  .s_2_2 = getSBoxInvert(s.s_2_2), \
+  .s_2_3 = getSBoxInvert(s.s_2_3), \
+  .s_3_0 = getSBoxInvert(s.s_3_0), \
+  .s_3_1 = getSBoxInvert(s.s_3_1), \
+  .s_3_2 = getSBoxInvert(s.s_3_2), \
+  .s_3_3 = getSBoxInvert(s.s_3_3) }
+
 #define shiftrows(s) { \
 	.s_0_0 = s.s_0_0, .s_0_1 = s.s_1_1, .s_0_2 = s.s_2_2, .s_0_3 = s.s_3_3, \
 	.s_1_0 = s.s_1_0, .s_1_1 = s.s_2_1, .s_1_2 = s.s_3_2, .s_1_3 = s.s_0_3, \
 	.s_2_0 = s.s_2_0, .s_2_1 = s.s_3_1, .s_2_2 = s.s_0_2, .s_2_3 = s.s_1_3, \
 	.s_3_0 = s.s_3_0, .s_3_1 = s.s_0_1, .s_3_2 = s.s_1_2, .s_3_3 = s.s_2_3 }
+
+#define invshiftrows(s) { \
+  .s_0_0 = s.s_0_0, .s_0_1 = s.s_3_1, .s_0_2 = s.s_2_2, .s_0_3 = s.s_1_3, \
+  .s_1_0 = s.s_1_0, .s_1_1 = s.s_0_1, .s_1_2 = s.s_3_2, .s_1_3 = s.s_2_3, \
+  .s_2_0 = s.s_2_0, .s_2_1 = s.s_1_1, .s_2_2 = s.s_0_2, .s_2_3 = s.s_3_3, \
+  .s_3_0 = s.s_3_0, .s_3_1 = s.s_2_1, .s_3_2 = s.s_1_2, .s_3_3 = s.s_0_3 }
 
 #define pairwisexor(s) { \
 	.s_0_0 = s.s_0_0 ^ s.s_0_1, .s_0_1 = s.s_0_1 ^ s.s_0_2, .s_0_2 = s.s_0_2 ^ s.s_0_3, .s_0_3 = s.s_0_3 ^ s.s_0_0, \
@@ -131,6 +155,12 @@ const uint8_t Rcon[255] = {
 
 #define xtime(x) ((x<<1) ^ (((x>>7) & 1) * 0x1b))
 
+#define multiply(x, y)                                \
+      (  ((y & 1) * x) ^                              \
+      ((y>>1 & 1) * xtime(x)) ^                       \
+      ((y>>2 & 1) * xtime(xtime(x))) ^                \
+      ((y>>3 & 1) * xtime(xtime(xtime(x)))) ^         \
+      ((y>>4 & 1) * xtime(xtime(xtime(xtime(x))))))   \
 
 #define rowxor(s) { \
 	.r_0 = s.s_0_0 ^ s.s_0_1 ^ s.s_0_2 ^ s.s_0_3, \
@@ -150,7 +180,6 @@ const uint8_t Rcon[255] = {
 	.s_2_0 = s.s_2_0 ^ t.s_2_0, .s_2_1 = s.s_2_1 ^ t.s_2_1, .s_2_2 = s.s_2_2 ^ t.s_2_2, .s_2_3 = s.s_2_3 ^ t.s_2_3, \
 	.s_3_0 = s.s_3_0 ^ t.s_3_0, .s_3_1 = s.s_3_1 ^ t.s_3_1, .s_3_2 = s.s_3_2 ^ t.s_3_2, .s_3_3 = s.s_3_3 ^ t.s_3_3 }
 
-
 #define mapxtime(s) { \
   .s_0_0 = xtime(s.s_0_0), \
   .s_0_1 = xtime(s.s_0_1), \
@@ -169,6 +198,24 @@ const uint8_t Rcon[255] = {
   .s_3_2 = xtime(s.s_3_2), \
   .s_3_3 = xtime(s.s_3_3) }
 
+#define invmixcolumns(s) { \
+  .s_0_0 = multiply(s.s_0_0, 0x0e) ^ multiply(s.s_0_1, 0x0b) ^ multiply(s.s_0_2, 0x0d) ^ multiply(s.s_0_3, 0x09), \
+  .s_0_1 = multiply(s.s_0_0, 0x09) ^ multiply(s.s_0_1, 0x0e) ^ multiply(s.s_0_2, 0x0b) ^ multiply(s.s_0_3, 0x0d), \
+  .s_0_2 = multiply(s.s_0_0, 0x0d) ^ multiply(s.s_0_1, 0x09) ^ multiply(s.s_0_2, 0x0e) ^ multiply(s.s_0_3, 0x0b), \
+  .s_0_3 = multiply(s.s_0_0, 0x0b) ^ multiply(s.s_0_1, 0x0d) ^ multiply(s.s_0_2, 0x09) ^ multiply(s.s_0_3, 0x0e), \
+  .s_1_0 = multiply(s.s_1_0, 0x0e) ^ multiply(s.s_1_1, 0x0b) ^ multiply(s.s_1_2, 0x0d) ^ multiply(s.s_1_3, 0x09), \
+  .s_1_1 = multiply(s.s_1_0, 0x09) ^ multiply(s.s_1_1, 0x0e) ^ multiply(s.s_1_2, 0x0b) ^ multiply(s.s_1_3, 0x0d), \
+  .s_1_2 = multiply(s.s_1_0, 0x0d) ^ multiply(s.s_1_1, 0x09) ^ multiply(s.s_1_2, 0x0e) ^ multiply(s.s_1_3, 0x0b), \
+  .s_1_3 = multiply(s.s_1_0, 0x0b) ^ multiply(s.s_1_1, 0x0d) ^ multiply(s.s_1_2, 0x09) ^ multiply(s.s_1_3, 0x0e), \
+  .s_2_0 = multiply(s.s_2_0, 0x0e) ^ multiply(s.s_2_1, 0x0b) ^ multiply(s.s_2_2, 0x0d) ^ multiply(s.s_2_3, 0x09), \
+  .s_2_1 = multiply(s.s_2_0, 0x09) ^ multiply(s.s_2_1, 0x0e) ^ multiply(s.s_2_2, 0x0b) ^ multiply(s.s_2_3, 0x0d), \
+  .s_2_2 = multiply(s.s_2_0, 0x0d) ^ multiply(s.s_2_1, 0x09) ^ multiply(s.s_2_2, 0x0e) ^ multiply(s.s_2_3, 0x0b), \
+  .s_2_3 = multiply(s.s_2_0, 0x0b) ^ multiply(s.s_2_1, 0x0d) ^ multiply(s.s_2_2, 0x09) ^ multiply(s.s_2_3, 0x0e), \
+  .s_3_0 = multiply(s.s_3_0, 0x0e) ^ multiply(s.s_3_1, 0x0b) ^ multiply(s.s_3_2, 0x0d) ^ multiply(s.s_3_3, 0x09), \
+  .s_3_1 = multiply(s.s_3_0, 0x09) ^ multiply(s.s_3_1, 0x0e) ^ multiply(s.s_3_2, 0x0b) ^ multiply(s.s_3_3, 0x0d), \
+  .s_3_2 = multiply(s.s_3_0, 0x0d) ^ multiply(s.s_3_1, 0x09) ^ multiply(s.s_3_2, 0x0e) ^ multiply(s.s_3_3, 0x0b), \
+  .s_3_3 = multiply(s.s_3_0, 0x0b) ^ multiply(s.s_3_1, 0x0d) ^ multiply(s.s_3_2, 0x09) ^ multiply(s.s_3_3, 0x0e), }
+
 void printstate(char *str, struct state s){
 	printf("%s%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x\n", str,
 	    s.s_0_0, s.s_0_1, s.s_0_2, s.s_0_3, s.s_1_0, s.s_1_1, s.s_1_2, s.s_1_3, 
@@ -176,8 +223,8 @@ void printstate(char *str, struct state s){
 }
 
 struct state AES128_encrypt(struct state in, struct state key);
+struct state AES128_decrypt(struct state in, struct state key);
 
-// Cipher is the main function that encrypts the PlainText.
 inline struct state AES128_encrypt(struct state in, struct state key)
 {
   uint8_t round = 0;
@@ -227,6 +274,69 @@ inline struct state AES128_encrypt(struct state in, struct state key)
   key.s_3_0 ^= key.s_2_0; key.s_3_1 ^= key.s_2_1; key.s_3_2 ^= key.s_2_2; key.s_3_3 ^= key.s_2_3;
   struct state t10 = statestatexor(t9, key);
   return t10;
+}
+
+inline struct state AES128_decrypt(struct state in, struct state key)
+{
+  uint8_t round = 0;
+
+  for(round = 1; round <= Nr; round++)
+  {
+    //Generate new key
+    struct row s1 = rotWord(key.s_3_0, key.s_3_1, key.s_3_2, key.s_3_3);
+    struct row scramble = subword(s1);
+    scramble.r_0 ^= Rcon[round];
+    key.s_0_0 ^= scramble.r_0; key.s_0_1 ^= scramble.r_1; key.s_0_2 ^= scramble.r_2; key.s_0_3 ^= scramble.r_3;
+    key.s_1_0 ^= key.s_0_0; key.s_1_1 ^= key.s_0_1; key.s_1_2 ^= key.s_0_2; key.s_1_3 ^= key.s_0_3;
+    key.s_2_0 ^= key.s_1_0; key.s_2_1 ^= key.s_1_1; key.s_2_2 ^= key.s_1_2; key.s_2_3 ^= key.s_1_3;
+    key.s_3_0 ^= key.s_2_0; key.s_3_1 ^= key.s_2_1; key.s_3_2 ^= key.s_2_2; key.s_3_3 ^= key.s_2_3;
+  }
+
+  // Add the First round key to the state before starting the rounds.
+  struct state t1 = statestatexor(in, key);
+  in = t1;
+
+  // There will be Nr rounds.
+  // The first Nr-1 rounds are identical.
+  // These Nr-1 rounds are executed in the loop below.
+  for(round=Nr-1;round>0;round--)
+  {
+    //Inv Shift Rows
+    struct state t2 = invshiftrows(in);
+    //Inv Sub bytes
+    struct state t3 = invsubbytes(t2);
+    //Generate new key
+    key.s_3_0 ^= key.s_2_0; key.s_3_1 ^= key.s_2_1; key.s_3_2 ^= key.s_2_2; key.s_3_3 ^= key.s_2_3;
+    key.s_2_0 ^= key.s_1_0; key.s_2_1 ^= key.s_1_1; key.s_2_2 ^= key.s_1_2; key.s_2_3 ^= key.s_1_3;
+    key.s_1_0 ^= key.s_0_0; key.s_1_1 ^= key.s_0_1; key.s_1_2 ^= key.s_0_2; key.s_1_3 ^= key.s_0_3;
+    struct row s1 = rotWord(key.s_3_0, key.s_3_1, key.s_3_2, key.s_3_3);
+    struct row scramble = subword(s1);
+    scramble.r_0 ^= Rcon[round+1];
+    key.s_0_0 ^= scramble.r_0; key.s_0_1 ^= scramble.r_1; key.s_0_2 ^= scramble.r_2; key.s_0_3 ^= scramble.r_3;
+    //Add round key
+    struct state t4 = statestatexor(t3, key);
+    //Inv Mix Columns
+    struct state t5 = invmixcolumns(t4);
+    in = t5;
+  }
+  
+  // The last round is given below.
+  // The MixColumns function is not here in the last round.
+  //Inv Shift Rows
+  struct state t6 = invshiftrows(in);
+  //Inv Sub bytes
+  struct state t7 = invsubbytes(t6);
+  //Generate new key
+  key.s_3_0 ^= key.s_2_0; key.s_3_1 ^= key.s_2_1; key.s_3_2 ^= key.s_2_2; key.s_3_3 ^= key.s_2_3;
+  key.s_2_0 ^= key.s_1_0; key.s_2_1 ^= key.s_1_1; key.s_2_2 ^= key.s_1_2; key.s_2_3 ^= key.s_1_3;
+  key.s_1_0 ^= key.s_0_0; key.s_1_1 ^= key.s_0_1; key.s_1_2 ^= key.s_0_2; key.s_1_3 ^= key.s_0_3;
+  struct row s1 = rotWord(key.s_3_0, key.s_3_1, key.s_3_2, key.s_3_3);
+  struct row scramble = subword(s1);
+  scramble.r_0 ^= Rcon[round+1];
+  key.s_0_0 ^= scramble.r_0; key.s_0_1 ^= scramble.r_1; key.s_0_2 ^= scramble.r_2; key.s_0_3 ^= scramble.r_3;
+  //Add round key
+  struct state t8 = statestatexor(t7, key);
+  return t8;
 }
 
 static void test_encrypt_ecb_verbose(void)
@@ -285,9 +395,32 @@ void test_encrypt_ecb(void)
   }
 }
 
+static void test_decrypt_ecb(void)
+{
+  struct state key = {0x2b, 0x7e, 0x15, 0x16, 0x28, 0xae, 0xd2, 0xa6, 0xab, 0xf7, 0x15, 0x88, 0x09, 0xcf, 0x4f, 0x3c};
+  struct state in  = {0x3a, 0xd7, 0x7b, 0xb4, 0x0d, 0x7a, 0x36, 0x60, 0xa8, 0x9e, 0xca, 0xf3, 0x24, 0x66, 0xef, 0x97};
+  struct state out = {0x6b, 0xc1, 0xbe, 0xe2, 0x2e, 0x40, 0x9f, 0x96, 0xe9, 0x3d, 0x7e, 0x11, 0x73, 0x93, 0x17, 0x2a};
+
+  struct state result = AES128_decrypt(in, key);
+
+  printf("ECB decrypt: ");
+
+  if(0 == memcmp((char*) &out, (char*) &result, 16))
+  {
+    printf("SUCCESS!\n");
+  }
+  else
+  {
+    printf("FAILURE!\n");
+    printstate("Expected:\n", out);
+    printstate("Result:\n", result);
+  }
+}
+
 int main(void)
 {
     test_encrypt_ecb();
+    test_decrypt_ecb();
     test_encrypt_ecb_verbose();
     
     return 0;
