@@ -1,4 +1,9 @@
 open Vil
+module S = Set.Make( 
+  struct
+    let compare = Pervasives.compare
+    type t = int
+  end )
 
 (* code for separating operations *)
 type operationcount =
@@ -102,13 +107,24 @@ let rec childclassesrevorder (res:voperation list list) (acc:voperation list) (o
 	| _ -> let (ready,notready) = List.partition (fun o -> childreninlist true o acc) ops
 		in childclassesrevorder (ready::res) (List.rev_append ready acc) notready
 
+let rec childclassesrevorderset (acc:voperation list) (ops:voperation list) = 
+	let startset = S.of_list (List.map (fun o -> o.oid) acc)
+	in let rec driver (res:voperation list list) (acc:S.t) (ops:voperation list) =
+		match ops with
+		| [] -> res
+		| _ -> let (ready,notready) = List.partition (fun o -> 
+				List.for_all (fun c -> S.mem c.oid acc) (getchildren o)) ops
+			in let nextset = (S.union (S.of_list (List.map (fun o -> o.oid) ready)) acc)
+			in driver (ready::res) nextset notready
+	in driver [] startset ops
+
 let fastasap (acc:voperation list) (ops:voperation list) = 
-	let classes = List.rev (childclassesrevorder [] acc ops)
+	let classes = List.rev (childclassesrevorderset acc ops)
 	in List.iter (List.iter asap) classes
 
 
 let fastalap (latest:int) (acc:voperation list) (ops:voperation list) = 
-	let classes = childclassesrevorder [] acc ops
+	let classes = childclassesrevorderset acc ops
 	in List.iter (List.iter (alap latest acc)) classes
 
 (* builds asap schedule for ops (start with acc=[]) *)
