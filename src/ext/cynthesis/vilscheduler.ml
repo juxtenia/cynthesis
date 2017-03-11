@@ -115,7 +115,7 @@ let compareop o1 o2 = if o1.oschedule.latest-o2.oschedule.latest <> 0
 let getearliesttime (o:voperation) = 
 	(List.fold_left max 0 (List.map (fun o1 -> o1.oschedule.set) (getchildren o))) + (operationoffset o)
 
-let rec lineariterator ll ops = 
+let rec schedule ll ops = 
 	let sorted = List.sort compareop ops
 	in let tbl = H.create !initialsize
 	in let classes = childclassesset [] S.empty sorted
@@ -134,7 +134,7 @@ let rec lineariterator ll ops =
 				in let i = getearliesttime o
 				in match countfromclass ll cl with
 				| Infinite -> o.oschedule <- scheduleat o.oschedule i (-1)
-				| Finite c -> schedCount o cl c i
+				| Finite cc -> schedCount o cl cc i
 			) c
 		) classes
 
@@ -147,5 +147,5 @@ let generatescheduleinfo (f:funmodule) =
 		generateasap m.bdataFlowGraph; 
 		generatealap (List.fold_left (fun a b -> max a b.oschedule.earliest) (* find max time *)
 			0 m.bdataFlowGraph) m.bdataFlowGraph;
-		lineariterator f.vglobals m.bdataFlowGraph;
+		schedule f.vglobals m.bdataFlowGraph;
 	) f.vblocks

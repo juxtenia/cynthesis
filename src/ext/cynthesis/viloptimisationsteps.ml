@@ -245,5 +245,7 @@ let hillclimibingoptimiser (fm:funmodule) =
 						;
 						iterate t
 					)
-	 	in iterate (orderoptimisations f (getpossibleoptimisations f))
+	 	in let opts = (getpossibleoptimisations f)
+	 	in let oopts = (orderoptimisations f opts)
+	 	in iterate oopts
 	 in driver fm (evaluate fm)
