@@ -4,6 +4,8 @@ module S = Set.Make(
     let compare = Pervasives.compare
     type t = int
   end )
+module H = Hashtbl
+let initialsize = ref 40
 
 (* code for separating operations *)
 type operationcount =
@@ -108,33 +110,33 @@ let reverse_alap (o:voperation) = let alap_v = (alapref o) - (operationoffset o)
 	) (getchildren o)
 
 (* gets classes of things to iterate through *)
-let rec childclassesrevorder (res:voperation list list) (acc:voperation list) (ops:voperation list) =
+let rec childclasses (res:voperation list list) (acc:voperation list) (ops:voperation list) =
 	match ops with
 	| [] -> res
 	| _ -> let (ready,notready) = List.partition (fun o -> childreninlist true o acc) ops
-		in childclassesrevorder (ready::res) (List.rev_append ready acc) notready
+		in childclasses (ready::res) (List.rev_append ready acc) notready
 
-let rec childclassesrevorderset (res:voperation list list) (acc:S.t) (ops:voperation list) =
+let rec childclassesset (res:voperation list list) (acc:S.t) (ops:voperation list) =
 	match ops with
 	| [] -> List.rev res
 	| _ -> let (ready,notready) = List.partition (fun o -> 
 			List.for_all (fun c -> S.mem c.oid acc) (getchildren o)) ops
 		in let nextset = (S.union (S.of_list (List.map (fun o -> o.oid) ready)) acc)
-		in childclassesrevorderset (ready::res) nextset notready
+		in childclassesset (ready::res) nextset notready
 	
 
 let fastasap (acc:S.t) (ops:voperation list) = 
-	let classes = childclassesrevorderset [] acc ops
+	let classes = childclassesset [] acc ops
 	in List.iter (List.iter asap) classes
 
 
 let fastalap (latest:int) (acc:S.t) (ops:voperation list) = 
-	let classes = childclassesrevorderset [] acc ops
+	let classes = childclassesset [] acc ops
 	in  List.iter (fun o -> o.oschedule <- setlatest o.oschedule latest) ops;
 		List.iter (List.iter reverse_alap) classes
 
 let fastasapalap (acc:S.t) (ops:voperation list) = 
-	let classes = childclassesrevorderset [] acc ops
+	let classes = childclassesset [] acc ops
 	in let rec asapdriver cl = match cl with
 		| [] -> 0
 		| [c] -> List.iter asap c;
@@ -151,6 +153,36 @@ let rec generateasap (acc:voperation list) (ops:voperation list) =
 (* builds alap schedule for ops (start with acc=[] and latest as the maximum asap value) *)
 let rec generatealap (latest:int) (acc:voperation list) (ops:voperation list) = 
 	fastalap latest (S.of_list (List.map (fun o -> o.oid) acc)) ops
+
+let compareop o1 o2 = if o1.oschedule.latest-o2.oschedule.latest <> 0
+	then o1.oschedule.latest-o2.oschedule.latest
+	else o1.oschedule.earliest-o2.oschedule.earliest
+
+let getearliesttime (o:voperation) = 
+	(List.fold_left max 0 (List.map (fun o1 -> o1.oschedule.set) (getchildren o))) + (operationoffset o)
+
+let rec lineariterator ll ops = 
+	let sorted = List.sort compareop ops
+	in let tbl = H.create !initialsize
+	in let classes = childclassesset [] S.empty sorted
+	in let getCount (c:operationclass) (i:int) = try H.find tbl (c,i) 
+		with | Not_found -> 0
+	in let setCount (c:operationclass) (i:int) (cc:int) = H.replace tbl (c,i) cc
+	in let rec schedCount o c cc i = 
+		let sc = getCount c i
+		in  if sc >= cc 
+			then schedCount o c cc (i+1)
+			else o.oschedule <- scheduleat o.oschedule i sc;
+				setCount c i (sc+1)
+	in  List.iter (fun c -> 
+			List.iter (fun o ->
+				let cl = getclass o
+				in let i = getearliesttime o
+				in match countfromclass ll cl with
+				| Infinite -> o.oschedule <- scheduleat o.oschedule i (-1)
+				| Finite c -> schedCount o cl c i
+			) c
+		) classes
 
 let rec scheduleiterator ll i acc currentstep todo =  
 	match todo with
@@ -185,5 +217,5 @@ let generatescheduleinfo (f:funmodule) =
 		generateasap [] m.bdataFlowGraph; 
 		generatealap (List.fold_left (fun a b -> max a b.oschedule.earliest) (* find max time *)
 			0 m.bdataFlowGraph) [] m.bdataFlowGraph;
-		scheduleiterator f.vglobals 0 S.empty [] m.bdataFlowGraph;
+		lineariterator f.vglobals m.bdataFlowGraph;
 	) f.vblocks
