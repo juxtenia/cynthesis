@@ -1,9 +1,5 @@
 open Vil
-module S = Set.Make( 
-  struct
-    let compare = Pervasives.compare
-    type t = int
-  end )
+module S = Vil.S
 module H = Hashtbl
 let initialsize = ref 40
 
@@ -79,18 +75,6 @@ let reverse_alap (o:voperation) = let alap_v = o.oschedule.latest - (operationof
 		then o1.oschedule <- setlatest o1.oschedule alap_v
 		else ()
 	) (getchildren o)
-
-(* gets classes of things to iterate through *)
-let rec childclassesrevorderset (res:voperation list list) (acc:S.t) (ops:voperation list) =
-	match ops with
-	| [] -> res
-	| _ -> let (ready,notready) = List.partition (fun o -> 
-			List.for_all (fun c -> S.mem c.oid acc) (getchildren o)) ops
-		in let nextset = (S.union (S.of_list (List.map (fun o -> o.oid) ready)) acc)
-		in childclassesrevorderset (ready::res) nextset notready	
-
-let childclassesset (res:voperation list list) (acc:S.t) (ops:voperation list) =
-	List.rev (childclassesrevorderset res acc ops)
 
 let fastasap (acc:S.t) (ops:voperation list) = 
 	let classes = childclassesset [] acc ops

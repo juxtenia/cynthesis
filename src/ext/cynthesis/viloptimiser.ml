@@ -1,5 +1,6 @@
 open Vil
 open Vilannotator
+module S = Vil.S
 module E = Errormsg
 
 (* Straightening *)
@@ -95,25 +96,18 @@ let rec pruneoperations (os:voperation list) =
 	then pruneoperations (List.filter (fun o -> if o.ousecount = 0 then (decchildren o; false) else true) os)
 	else os
 
-(** removes duplicate operations *)
-let rec compactoperations (c:vconnection list) (acc:voperation list) 
-		(skip:voperation list) (ops:voperation list) = 
-	match ops with
-	| [] -> (match skip with
+let deduplicate (cs:vconnection list) (ops:voperation list) =
+	let classes = childclassesset [] S.empty ops
+	in let rec driver acc reps c = match c with
 		| [] -> acc
-		| _ -> compactoperations c acc [] skip
-	)
-	| h::t -> if(childreninlist true h acc)
-		then
-			let (eqs,neqs) = 
+		| []::c1 -> List.iter (replaceoperations reps) c1;
+			replaceconditions reps cs;
+			driver acc [] c1
+		| (h::t) :: c1 -> let (eqs,neqs) = 
 				List.partition (fun o -> eq_operation_type h.operation o.operation) t
-			in let replacements = List.map (fun o -> (o,Simple h)) eqs
-			in  replaceoperations replacements acc;
-				replaceoperations replacements neqs;
-				replaceoperations replacements skip;
-				replaceconditions replacements c;
-				compactoperations c (h::acc) skip neqs
-		else compactoperations c acc (h::skip) t
+			in let replacements = List.fold_left (fun r o -> (o,Simple h)::r) reps eqs
+			in  driver (h::acc) replacements (neqs::c1)
+	in driver [] [] classes
 
 (** optimises away unecessary operations *)
 let culloperations (f:funmodule) = 
@@ -125,8 +119,8 @@ let culloperations (f:funmodule) =
 		m.bdataFlowGraph <- pruneoperations m.bdataFlowGraph
 	) f.vblocks;
 	List.iter (fun m ->
-		m.bdataFlowGraph <- compactoperations m.boutputs [] [] m.bdataFlowGraph
-	) f.vblocks;;
+		m.bdataFlowGraph <- deduplicate m.boutputs m.bdataFlowGraph
+	) f.vblocks
                               
 let peepholeopts (inits:vlookupinfo list) (v:vvarinfo) (o:voperation): 
 (* Some ((ids to remove, ops to add ),  (list of (replace this, with this)) or None *)

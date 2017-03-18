@@ -1,4 +1,9 @@
 open Big_int
+module S = Set.Make( 
+  struct
+    let compare = Pervasives.compare
+    type t = int
+  end )
 module E = Errormsg
 
 (* id for operations, reset each time a function is synthesised *)
@@ -785,3 +790,27 @@ let mergeparralleloperations (returnvar:vvarinfo) (ol:voperationlink) (iot:voper
 let allconst l = List.for_all (fun o1 -> match o1.operation with
 			| Constant _ -> true
 			| _ -> false) l
+
+let childreninset (acc:S.t) (o:voperation) = 
+	match o.operation with
+	| Result (_,_,_,o1) 
+	| ReturnValue o1 
+	| Unary (_,o1,_) -> List.for_all (fun c -> S.mem c.oid acc) (getlinkchildren o1)
+	| Lookup (_,o1,_) -> List.for_all (fun o2 -> List.for_all (fun c -> S.mem c.oid acc) (getlinkchildren o2)) o1
+	| Binary (_,o1,o2,_) -> List.for_all (fun c -> S.mem c.oid acc) (getlinkchildren o1) &&
+		List.for_all (fun c -> S.mem c.oid acc) (getlinkchildren o2)
+	| Ternary (o1,o2,o3,_) -> List.for_all (fun c -> S.mem c.oid acc) (getlinkchildren o1) &&
+		List.for_all (fun c -> S.mem c.oid acc) (getlinkchildren o2) &&
+		List.for_all (fun c -> S.mem c.oid acc) (getlinkchildren o3)
+	| _ -> true
+
+(* gets classes of things to iterate through *)
+let rec childclassesrevorderset (res:voperation list list) (acc:S.t) (ops:voperation list) =
+	match ops with
+	| [] -> res
+	| _ -> let (ready,notready) = List.partition (fun o -> childreninset acc o) ops
+		in let nextset = (S.union (S.of_list (List.map (fun o -> o.oid) ready)) acc)
+		in childclassesrevorderset (ready::res) nextset notready	
+
+let childclassesset (res:voperation list list) (acc:S.t) (ops:voperation list) =
+	List.rev (childclassesrevorderset res acc ops)
