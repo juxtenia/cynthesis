@@ -40,17 +40,14 @@ let rec compactblocks (acc:vblock list) (mods:vblock list) =
 
 (** removes unreachable block *)
 let rec removeunreachableblocks (mods:vblock list) = 
-	let (rm,kp) = List.partition (fun b -> Listutil.empty b.binputs) mods
-	in match rm with
-		| [] -> kp
-		| _ -> List.iter (fun b -> 
-				b.binputs <- List.filter (fun c ->
-					match c.connectfrom with
-						| Some i -> not (List.exists (fun b1 -> b1.bid = i) rm)
-						| None -> true
-				) b.binputs
-			) kp;
-			removeunreachableblocks kp
+	let (s,ns) = List.partition (fun b -> List.exists (fun c -> c.connectfrom=None) b.binputs) mods
+	in let rec driver acc todo =
+		match 
+			List.partition (fun b -> List.exists (fun b1 -> b1.bid=b.bid) acc) todo
+		with
+			| ([],_) -> acc
+			| (add,ntodo) -> driver (List.rev_append add acc) ntodo
+	in driver s ns
 
 (** removes assignments to variables that are not used later *)
 let pruneresults (f:funmodule) = List.iter
