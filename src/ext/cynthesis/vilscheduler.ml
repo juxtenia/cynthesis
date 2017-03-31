@@ -19,8 +19,6 @@ let dodsp = ref true
 let getclass (o:voperation) = match o.operation with
 	| Lookup(v,_,_) -> Lookup v
 	| Binary(Mult,o1,o2,t)
-	| Binary(Div,o1,o2,t)
-	| Binary(Mod,o1,o2,t) 
 		when !dodsp &&
 			not (allconst (getlinkchildren o1)) &&
 			not (allconst (getlinkchildren o2))

@@ -72,8 +72,6 @@ let getcontrolvariablename (bid:int) (s:string) = Printf.sprintf "control_%d_%s"
 let getoperationvariablename (bid:int) (o:voperation) = Printf.sprintf "operation_%d_%d" bid o.oid;;
 let getreturnvariablename (bid:int) = Printf.sprintf "return_%d" bid;;
 let dspmul = "mul"
-let dspdiv = "div"
-let dsprem = "rem"
 let dspinput1 = "input1"
 let dspinput2 = "input2"
 let dspresult = "result"
@@ -172,21 +170,13 @@ let makedspblock (r:vastmodule) (mid:int) =
 		(siztyfourwidetype REG)
 	in let mul = makelvalnorange (getdspvariablename mid dspmul) 
 		(siztyfourwidetype WIRE)
-	in let div = makelvalnorange (getdspvariablename mid dspdiv)
-		(siztyfourwidetype WIRE)
-	in let rem = makelvalnorange (getdspvariablename mid dsprem) 
-		(siztyfourwidetype WIRE)
 	in  addvar r input1;
 		addvar r input2;
 		addvar r mul;
-		addvar r div;
-		addvar r rem;
 		addregvar r result false (
 			TERNARY (VARIABLE mul, BINARY (MULT, VARIABLE input1, VARIABLE input2), 
-			TERNARY (VARIABLE div, BINARY (DIV, VARIABLE input1, VARIABLE input2), 
-			TERNARY (VARIABLE rem, BINARY (MOD, VARIABLE input1, VARIABLE input2), 
 			VARIABLE result
-		))))
+		))
 
 let rec makedsps (r:vastmodule) (n:int) = if n = 0 then ()
 	else (makedspblock r (n-1); makedsps r (n-1))
@@ -362,26 +352,18 @@ let addalways (r:vastmodule) (v:vastvariable) (e:vastexpression) =
 		assign=e; blocking=true; } :: r.always
 
 let dspconnection (r:vastmodule) (f:funmodule) (n:int) = 
-	let (mul_e,div_e,mod_e) = List.fold_left (fun e b ->
-		List.fold_left (fun (emu,ed,emo) o -> if o.oschedule.assigned = n
+	let mul_e = List.fold_left (fun e b ->
+		List.fold_left (fun emu o -> if o.oschedule.assigned = n
 			then match o.operation with
 				| Binary(Mult,o1,o2,_) when not (allconst (getlinkchildren o1)) &&
 					not (allconst (getlinkchildren o2))
-				-> (BINARY(LOR,defaultrange (getcontrolvariablei r b.bid (o.oschedule.set -1)),emu),ed,emo)
-				| Binary(Div,o1,o2,_) when not (allconst (getlinkchildren o1)) &&
-					not (allconst (getlinkchildren o2))
-				-> (emu,BINARY(LOR,defaultrange (getcontrolvariablei r b.bid (o.oschedule.set -1)),ed),emo)
-				| Binary(Mod,o1,o2,_) when not (allconst (getlinkchildren o1)) &&
-					not (allconst (getlinkchildren o2))
-				-> (emu,ed,BINARY(LOR,defaultrange (getcontrolvariablei r b.bid (o.oschedule.set -1)),emo))
-				| _ -> (emu,ed,emo)
-			else (emu,ed,emo)
+				-> BINARY(LOR,defaultrange (getcontrolvariablei r b.bid (o.oschedule.set -1)),emu)
+				| _ -> emu
+			else emu
 		) e b.bdataFlowGraph ) 
-		(CONST zeroconst, CONST zeroconst, CONST zeroconst) 
+		(CONST zeroconst)
 		f.vblocks
 	in  addalways r (getvar r (getdspvariablename n dspmul)) mul_e;
-		addalways r (getvar r (getdspvariablename n dspdiv)) div_e;
-		addalways r (getvar r (getdspvariablename n dsprem)) mod_e;
 	let (input1_e,input2_e) = List.fold_left (fun e b -> 
 		List.fold_left (fun (e1,e2) o -> if o.oschedule.assigned = n
 			then match (getclass o,o.operation) with

@@ -156,7 +156,7 @@ let rec peephole (inits:vlookupinfo list) (v:vvarinfo) (b:vblock) =
 			in let rmids = List.flatten rmls
 			in let additions = List.flatten addls
 			in let reps = List.flatten repls
-			in b.bdataFlowGraph <- List.filter (fun o1 -> not (List.mem o1.oid rmids)) b.bdataFlowGraph;
+			in  b.bdataFlowGraph <- List.filter (fun o1 -> not (List.mem o1.oid rmids)) b.bdataFlowGraph;
 				b.bdataFlowGraph <- List.rev_append additions b.bdataFlowGraph;
 				replaceoperations reps b.bdataFlowGraph;
 				replaceconditions reps b.boutputs;
