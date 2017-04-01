@@ -185,8 +185,8 @@ let optimisefunmodule (f:funmodule) =
 		 *)
 		f.vblocks <- compactblocks [] f.vblocks;
 		(* Unreachable code removal 
-		 * repeatedly remove all blocks with no input connections, 
-		 * and erase the connections from them in other modules
+		 * find reachable set from the entry point
+		 * remove connections to unreachable blocks
 		 *)
 		f.vblocks <- removeunreachableblocks f.vblocks;
 
