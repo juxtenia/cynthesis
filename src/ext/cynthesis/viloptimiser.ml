@@ -174,24 +174,20 @@ let getused (f:funmodule) (gl:vlookupinfo list) =
 (** optimising entry point *)
 let optimisefunmodule (f:funmodule) = 
 		(* inter block optimisations *)
-		E.log("%s\n") (print_funmodule f);
 
 		(* Generate connections. Wipes existing connections 
 		 * (except entry points), then adds all connections 
 		 * in bouputs to the appropriate module's binputs
 		 *)
-		E.log("%s\n") (print_funmodule f);
 		generateconnections f;
 		(* Straightening optimisation 
 		 * merge basic blocks with basic control flow
 		 *)
-		E.log("%s\n") (print_funmodule f);
 		f.vblocks <- compactblocks [] f.vblocks;
 		(* Unreachable code removal 
 		 * find reachable set from the entry point
 		 * remove connections to unreachable blocks
 		 *)
-		E.log("%s\n") (print_funmodule f);
 		f.vblocks <- removeunreachableblocks f.vblocks;
 
 		(* intra block optimisations *)
@@ -202,22 +198,17 @@ let optimisefunmodule (f:funmodule) =
 		 * also checks to see if blocks contain duplicate operations,
 		 * removing surplus ones.
 		 *)
-		E.log("%s\n") (print_funmodule f);
 		culloperations f;
 		(* Various peephole optimisations*)
-		E.log("%s\n") (print_funmodule f);
 		List.iter (peephole f.vglobals f.vdesc) f.vblocks;
 		(* Live variable analysis
 		 * annotates blocks with live variables,
 		 * removes unnecessary Result (_,_) labels and
 		 * removes unused local variables completely 
 		 *)
-		E.log("%s\n") (print_funmodule f);
 		variablecull f;
 		(* run this again to catch the dead code the variable cull reveals *)
-		E.log("%s\n") (print_funmodule f);
 		culloperations f;
 		(* remove unused globals *)
-		E.log("%s\n") (print_funmodule f);
 		f.vglobals <- getused f f.vglobals;
 
