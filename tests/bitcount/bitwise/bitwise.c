@@ -12,6 +12,6 @@ inline int bitcount (unsigned int in){
 }
 
 int main (int argc, int *argv[]){
-	printf("%d\n",bitcount(11));
+	printf("%d\n",bitcount(argc));
 	return 0;
 }
