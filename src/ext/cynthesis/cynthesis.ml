@@ -63,15 +63,25 @@ let cynthesise f =
 	 * Simplify feature runs after the makeCFG feature
 	 * meaing CFG is incomplete
 	 *)
-	(*Simplify.feature.fd_doit f;*)
+	let inlinefun = (fun v -> 
+		try Some (Listutil.findfilter (fun g -> match g with 
+			| GFun(fd,_) when fd.svar.vid = v.vid -> Some fd
+			| _ -> None
+		) f.globals) 
+		with | Not_found -> None)
+	in let ignorethis = ref false
+	in List.iter (fun glob -> match glob with
+    			| GFun(fd,_) when fd.svar.vinline -> Inliner.doFunction fd inlinefun ignorethis
+    			| _ -> ()
+  			) f.globals;
 	Partial.makeCFGFeature.fd_doit f;
 	Partial.makeCFGFeature.fd_enabled <- true; (* Stops the partial feature failing *)
 	Partial.feature.fd_doit f;
 	(* must do this again, since partial feature can screw up the CFG soemtimes *)
 	Partial.makeCFGFeature.fd_doit f;
+	if(!printflags land 1 <> 0) then Printers.transfeature.fd_doit f else ();    (** DEBUG PRINT *)
 	if(!printflags land 2 <> 0) then Printers.cfgfeature.fd_doit f else ();      (** DEBUG PRINT *)
 	if(!printflags land 4 <> 0) then Printers.cfglistfeature.fd_doit f else ();  (** DEBUG PRINT *)
-	if(!printflags land 1 <> 0) then Printers.transfeature.fd_doit f else ();    (** DEBUG PRINT *)
 	(* check that we can synthesise the marked functions
 	 * Validitycheck prints out problems as it finds them *)
 	if Validitycheck.check f 

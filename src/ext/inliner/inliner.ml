@@ -55,7 +55,7 @@ module H = Hashtbl
 module IH = Inthash
 module A = Alpha
 
-let debug = true
+let debug = false
 
 exception Recursion (* Used to signal recursion *)
 
@@ -95,7 +95,7 @@ class copyBodyVisitor     (host: fundec)                (* The host of the
         try IH.find stmtmap i 
         with Not_found -> E.s (bug "Cannot find the copy of stmt#%d" i)
       in
-      E.log "Patching gotos\n";
+      if debug then E.log "Patching gotos\n";
       let patchstmt (s: stmt) = 
         match s.skind with
           Goto (sr, l) -> 
@@ -153,7 +153,7 @@ class copyBodyVisitor     (host: fundec)                (* The host of the
     (* if we have a Goto or a Switch remember them to fixup at end *)
     (match s'.skind with
       (Goto _ | Switch _) -> 
-        E.log "Found goto\n";
+        if debug then E.log "Found goto\n";
         patches := s' :: !patches
     | _ -> ());
     
@@ -246,7 +246,7 @@ let replaceStatement (host: fundec)                         (* The host *)
                  
            | Some repl -> begin
                anyInlining := true;
-               E.log "Done inlining\n";
+               if debug then E.log "Done inlining\n";
 
                (* We must inline *)
                (* Prepare the mapping of local variables *)
