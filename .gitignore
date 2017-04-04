@@ -399,7 +399,7 @@
 /tests/*/*/work/*
 /tests/*/*/*.wlf
 /tests/*/*/*.vstf
-/tests/*/*/a.out
+/tests/*/*/*.out
 /tests/aes/addkey/addkey.sv
 /tests/aes/aes/AES128_decrypt.sv
 /tests/aes/aes/AES128_encrypt.sv
