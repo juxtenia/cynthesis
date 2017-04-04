@@ -1,0 +1,22 @@
+#!/bin/bash
+
+echo "Running Tests"
+
+for dir in `ls -d */*/`;
+do
+    cd $dir
+    echo "Entering $dir"
+    if ../../../bin/cilly --load=../../../lib/cil/inliner.cma \
+	    --load=../../../lib/cil/printers.cma --load=../../../lib/cil/cynthesis.cma \
+       	--docynthesis --cynthesis_print_flags=0 *.c
+    then 
+	   	for todo in `ls -d *.do`;
+    	do
+	   		echo "Running $todo"
+    		vsim -c -do $todo | grep "SUCCESS\|FAILURE" || echo "ERROR"
+    	done
+	else
+	    echo "# COMPILATION FAILURE"
+	fi
+	cd ../..
+done
