@@ -3,7 +3,9 @@
 #include <stdio.h>
 
 // The number of rounds in AES Cipher.
+#ifndef Nr
 #define Nr 10
+#endif
 
 struct state {
 	uint8_t s_0_0;
