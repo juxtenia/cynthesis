@@ -1,7 +1,5 @@
 module psuedorandom128(input clk, input rst, output reg [127:0] out);
 
-    assign ready = count == 128;
-
     always @(posedge clk or posedge rst) begin 
     	if(rst) begin
     		out <= 15'h7f1a; 

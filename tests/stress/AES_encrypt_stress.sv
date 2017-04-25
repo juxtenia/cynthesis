@@ -4,7 +4,7 @@ module AES_encrypt_stress(input clk, input rst, output reg [127:0] out);
 	wire [127:0] input_buffer;
 	wire [127:0] key_buffer;
 	psuedorandom128 input_source (.clk(clk),.rst(rst),.out(input_buffer));
-	psuedorandom128 input_source (.clk(clk),.rst(rst),.out(key_buffer));
+	psuedorandom128 key_source (.clk(clk),.rst(rst),.out(key_buffer));
 	AES128_encrypt encrypt (.clk(clk),.rst(rst),.start(next),.in(input_buffer),
 		.key(key_buffer),.finish(finished),.AES128_encrypt(out));
 
