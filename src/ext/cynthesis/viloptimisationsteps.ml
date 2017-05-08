@@ -75,6 +75,34 @@ let getconditionalexpansions (f:funmodule) = Listutil.mapfilter (fun b ->
 					f
 			)
 		}
+		| [{connectto=Some tt;requires=Some(olt,true);};{connectto=Some tf;requires=Some(olf,false);}] 
+			when eq_operation_link olt olf && 
+			let bt = blockfromint f tt
+			in let bf = blockfromint f tf
+			in List.length bt.binputs = 1 && 
+			List.length bf.binputs = 1 && 
+			(match (bt.boutputs,bf.boutputs) with
+				| ([{connectto=t1;requires=None}],[{connectto=t2;requires=None}]) 
+				when t1 = t2 -> true
+				| _ -> false
+			)
+		-> Some {
+			blockid=b.bid;
+			desc=ConditionalExpansion;
+			estimatedvalue=moduletime (blockfromint f tt) +moduletime (blockfromint f tf);
+			apply=(fun (f:funmodule) -> 
+				let m = blockfromint f b.bid
+				in let mt = blockfromint f tt
+				in let mf = blockfromint f tf
+				in let sw = List.hd (getswitches m)
+				in  mt.bdataFlowGraph <- mergeparralleloperations f.vdesc sw 
+				        mt.bdataFlowGraph mf.bdataFlowGraph;
+					f.vblocks <- (Viloptimiser.mergeblocks m mt) :: 
+						(List.filter (fun b1 -> b1.bid <> b.bid && b1.bid <> tt && b1.bid <> tf) 
+					        f.vblocks);
+					f
+			)
+		}
 		| _ -> None
 ) f.vblocks
 
