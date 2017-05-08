@@ -512,6 +512,7 @@ let operationoffset (o:voperation) = match o.operation with
 	| Unary (Cast,_,_) -> 0 (* cast is instant *)
 	| Unary (_,_,_)  
 	| Binary(_,_,_,_) -> 1 (* other operators take 1 step *)
+	| Ternary(_,_,_,_) -> 1
 	| Lookup (_,_,_) -> 1 (* lookup takes 1 step for now (could add dimensions later) *)
 	| _ -> 0 (* results, consts returnvalues and variables are instant *)
 

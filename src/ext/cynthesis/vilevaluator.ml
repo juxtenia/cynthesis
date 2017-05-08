@@ -5,7 +5,9 @@ module M = Matrixutil
 (** the cost of having certain operations, 
  *  currently a basic version but can be extended later 
  *)
-let operationcost o = operationoffset o
+let operationcost o = match o.operation with
+	| Ternary(_,_,_,_) -> 0
+	| _ -> operationoffset o
 
 let moduleoperationcost (m:vblock) = 
 	List.fold_left (fun t o -> t + operationcost o) 0 m.bdataFlowGraph

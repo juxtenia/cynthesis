@@ -213,6 +213,7 @@ let applyoptimisation (f:funmodule) (o) = o.apply f
 let opcostweight = 10.
 let timecostweight = 2000.
 let lookupcostweight = 0.01
+let blockcostweight = 1.
 
 (** Evaluates how good a module is *)
 let evaluate (f:funmodule) = 
@@ -220,10 +221,12 @@ let evaluate (f:funmodule) =
 	let opcost = float_of_int (totaloperationcost f)
 	in let lookupcost = float_of_int (totallookuparea f)
 	in let timecost = weightedtimecost f
+	in let blockcost = float_of_int (List.length f.vblocks)
 	in let totalcost = 
 		lookupcostweight *. lookupcost +. 
 		opcostweight *. opcost +. 
-		timecostweight *. timecost
+		timecostweight *. timecost +.
+		blockcostweight *. blockcost
 	in if !verbose 
 			then (E.log "Lookupcost = %f, Opcost = %f, Timecost = %f, Totalcost = %f\n" lookupcost opcost timecost totalcost) 
 			else ()
